@@ -1,0 +1,37 @@
+# Env / secrets
+.env
+.env.* 
+
+# Logs
+logs/
+*.log
+
+# Python cache / build
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.build/
+dist/
+*.egg-info/
+
+# Virtual environments (generic)
+venv/
+.venv/
+env/
+venv_pysisense_chatbot/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Old scratch files
+old_*.py
+old_*.json
+
+# Local lint/config artifacts
+.flake8
+
+# Local docs clone (pysisense repo)
+docs_src/

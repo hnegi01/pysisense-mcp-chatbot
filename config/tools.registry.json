@@ -1,0 +1,1624 @@
+[
+  {
+    "tool_id": "access.change_folder_and_dashboard_ownership",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "change_folder_and_dashboard_ownership",
+    "description": "Method to change the ownership of folders and optionally dashboards.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "executing_user": {
+          "type": "string",
+          "description": "executing_user parameter"
+        },
+        "folder_name": {
+          "type": "string",
+          "description": "folder_name parameter"
+        },
+        "new_owner_name": {
+          "type": "string",
+          "description": "new_owner_name parameter"
+        },
+        "original_owner_rule": {
+          "type": "string",
+          "description": "original_owner_rule parameter"
+        },
+        "change_dashboard_ownership": {
+          "type": "string",
+          "description": "change_dashboard_ownership parameter"
+        }
+      },
+      "required": [
+        "executing_user",
+        "folder_name",
+        "new_owner_name"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "access",
+      "dashboards",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "access.create_schedule_build",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "create_schedule_build",
+    "description": "Method to create a schedule build for a DataModel.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        },
+        "build_type": {
+          "type": "string",
+          "description": "build_type parameter"
+        },
+        "days": {
+          "type": "string",
+          "description": "days parameter"
+        },
+        "hour": {
+          "type": "string",
+          "description": "hour parameter"
+        },
+        "minute": {
+          "type": "string",
+          "description": "minute parameter"
+        },
+        "interval_days": {
+          "type": "string",
+          "description": "interval_days parameter"
+        },
+        "interval_hours": {
+          "type": "string",
+          "description": "interval_hours parameter"
+        },
+        "interval_minutes": {
+          "type": "string",
+          "description": "interval_minutes parameter"
+        }
+      },
+      "required": [
+        "datamodel_name"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "access",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "access.create_user",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "create_user",
+    "description": "Creates a new user by processing the provided user data to replace role",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "user_data": {
+          "type": "string",
+          "description": "user_data parameter"
+        }
+      },
+      "required": [
+        "user_data"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "access",
+      "users",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "access.delete_user",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "delete_user",
+    "description": "Deletes a user by their email (username).",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "user_name": {
+          "type": "string",
+          "description": "user_name parameter"
+        }
+      },
+      "required": [
+        "user_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "access",
+      "users",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "access.get_all_dashboard_shares",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "get_all_dashboard_shares",
+    "description": "Method to retrieve all dashboard shares, including user and group details for each shared dashboard.",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    },
+    "mutates": true,
+    "tags": [
+      "access",
+      "dashboards",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "access.get_datamodel_columns",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "get_datamodel_columns",
+    "description": "Retrieves columns from a DataModel by collecting them from its datasets and tables.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        }
+      },
+      "required": [
+        "datamodel_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "access",
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "access.get_group",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "get_group",
+    "description": "Retrieves group details by their name.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "name parameter"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "access",
+      "groups",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "access.get_unused_columns",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "get_unused_columns",
+    "description": "Identify unused columns in a given DataModel by comparing all available columns against the columns",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        }
+      },
+      "required": [
+        "datamodel_name"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "access",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "access.get_user",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "get_user",
+    "description": "Retrieves user details by their email (username) and expands the",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "user_name": {
+          "type": "string",
+          "description": "user_name parameter"
+        }
+      },
+      "required": [
+        "user_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "access",
+      "users",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "access.get_users_all",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "get_users_all",
+    "description": "Retrieves user details along with tenant, group, and role information.",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    },
+    "mutates": false,
+    "tags": [
+      "access",
+      "users",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "access.update_user",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "update_user",
+    "description": "Updates a user by their User Name.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "user_name": {
+          "type": "string",
+          "description": "user_name parameter"
+        },
+        "user_data": {
+          "type": "string",
+          "description": "user_data parameter"
+        }
+      },
+      "required": [
+        "user_name",
+        "user_data"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "access",
+      "users",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "access.users_per_group",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "users_per_group",
+    "description": "Retrieves all users within a specific group by name.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "group_name": {
+          "type": "string",
+          "description": "group_name parameter"
+        }
+      },
+      "required": [
+        "group_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "access",
+      "users",
+      "groups",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "access.users_per_group_all",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "users_per_group_all",
+    "description": "Retrieves all groups and maps them with the users belonging to those",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    },
+    "mutates": false,
+    "tags": [
+      "access",
+      "users",
+      "groups",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "datamodel.add_datamodel_shares",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "add_datamodel_shares",
+    "description": "Adds share entries (users and groups) to a DataModel.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        },
+        "shares": {
+          "type": "string",
+          "description": "shares parameter"
+        }
+      },
+      "required": [
+        "datamodel_name",
+        "shares"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "datamodel",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "datamodel.create_connections",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "create_connections",
+    "description": "Creates a new connection using the provided payload.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "connection_payload": {
+          "type": "string",
+          "description": "connection_payload parameter"
+        }
+      },
+      "required": [
+        "connection_payload"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "datamodel.create_datamodel",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "create_datamodel",
+    "description": "Creates a new DataModel in Sisense.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        },
+        "datamodel_type": {
+          "type": "string",
+          "description": "datamodel_type parameter"
+        }
+      },
+      "required": [
+        "datamodel_name",
+        "datamodel_type"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "datamodel.create_dataset",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "create_dataset",
+    "description": "Creates a new dataset in the specified DataModel.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        },
+        "connection_name": {
+          "type": "string",
+          "description": "connection_name parameter"
+        },
+        "database_name": {
+          "type": "string",
+          "description": "database_name parameter"
+        },
+        "schema_name": {
+          "type": "string",
+          "description": "schema_name parameter"
+        },
+        "dataset_name": {
+          "type": "string",
+          "description": "dataset_name parameter"
+        }
+      },
+      "required": [
+        "datamodel_name",
+        "connection_name",
+        "database_name",
+        "schema_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "datamodel.create_table",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "create_table",
+    "description": "Create a new table in the specified DataModel.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        },
+        "table_name": {
+          "type": "string",
+          "description": "table_name parameter"
+        },
+        "database_name": {
+          "type": "string",
+          "description": "database_name parameter"
+        },
+        "schema_name": {
+          "type": "string",
+          "description": "schema_name parameter"
+        },
+        "dataset_id": {
+          "type": "string",
+          "description": "dataset_id parameter"
+        },
+        "import_query": {
+          "type": "string",
+          "description": "import_query parameter"
+        },
+        "description": {
+          "type": "string",
+          "description": "description parameter"
+        },
+        "tags": {
+          "type": "string",
+          "description": "tags parameter"
+        },
+        "build_behavior_config": {
+          "type": "string",
+          "description": "build_behavior_config parameter"
+        }
+      },
+      "required": [
+        "datamodel_name",
+        "table_name"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "datamodel",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "datamodel.deploy_datamodel",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "deploy_datamodel",
+    "description": "Deploy (build or publish) the specified DataModel based on its type.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        },
+        "build_type": {
+          "type": "string",
+          "description": "build_type parameter"
+        },
+        "row_limit": {
+          "type": "string",
+          "description": "row_limit parameter"
+        },
+        "schema_origin": {
+          "type": "string",
+          "description": "schema_origin parameter"
+        }
+      },
+      "required": [
+        "datamodel_name"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "datamodel",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "datamodel.describe_datamodel",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "describe_datamodel",
+    "description": "Retrieve detailed datamodel structure in a flat, row-based format suitable for DataFrame or CSV export.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        }
+      },
+      "required": [
+        "datamodel_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "datamodel.describe_datamodel_raw",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "describe_datamodel_raw",
+    "description": "Retrieve detailed information about a specific DataModel, including share details.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        }
+      },
+      "required": [
+        "datamodel_name"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "datamodel",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "datamodel.generate_connections_payload",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "generate_connections_payload",
+    "description": "Generates the appropriate connections payload based on the datasource type.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datasource_type": {
+          "type": "string",
+          "description": "datasource_type parameter"
+        },
+        "connection_params": {
+          "type": "string",
+          "description": "connection_params parameter"
+        }
+      },
+      "required": [
+        "datasource_type",
+        "connection_params"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "datamodel.get_all_datamodel",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "get_all_datamodel",
+    "description": "Retrieves metadata details of all DataModels using an undocumented internal API.",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    },
+    "mutates": true,
+    "tags": [
+      "datamodel",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "datamodel.get_connection",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "get_connection",
+    "description": "Retrieves a Connection by its name.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "connection_name": {
+          "type": "string",
+          "description": "connection_name parameter"
+        }
+      },
+      "required": [
+        "connection_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "datamodel.get_data",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "get_data",
+    "description": "Retrieves data from a specific table in a DataModel and returns it as a list of dicts",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        },
+        "table_name": {
+          "type": "string",
+          "description": "table_name parameter"
+        },
+        "query": {
+          "type": "string",
+          "description": "query parameter"
+        }
+      },
+      "required": [
+        "datamodel_name",
+        "table_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "datamodel.get_datamodel",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "get_datamodel",
+    "description": "Retrieves a DataModel by its name.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        }
+      },
+      "required": [
+        "datamodel_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "datamodel.get_datamodel_shares",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "get_datamodel_shares",
+    "description": "Retrieves all share entries (users and groups) for a given DataModel in flat row format.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        }
+      },
+      "required": [
+        "datamodel_name"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "datamodel",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "datamodel.get_datasecurity",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "get_datasecurity",
+    "description": "Retrieves datasecurity table and column entries for a given DataModel in flat row format.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        }
+      },
+      "required": [
+        "datamodel_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "datamodel.get_datasecurity_detail",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "get_datasecurity_detail",
+    "description": "Retrieves detailed datasecurity rules for a specific DataModel, including share-level visibility.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        }
+      },
+      "required": [
+        "datamodel_name"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "datamodel",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "datamodel.get_model_schema",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "get_model_schema",
+    "description": "Retrieves the schema of a DataModel, including tables and columns.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        }
+      },
+      "required": [
+        "datamodel_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "datamodel.get_row_count",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "get_row_count",
+    "description": "Retrieves the row count for each table in a specific DataModel",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        }
+      },
+      "required": [
+        "datamodel_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "datamodel.get_table_schema",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "get_table_schema",
+    "description": "Retrieves the schema of a table in a specified connection from Data Source.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "connection_name": {
+          "type": "string",
+          "description": "connection_name parameter"
+        },
+        "database_name": {
+          "type": "string",
+          "description": "database_name parameter"
+        },
+        "schema_name": {
+          "type": "string",
+          "description": "schema_name parameter"
+        },
+        "table_name": {
+          "type": "string",
+          "description": "table_name parameter"
+        }
+      },
+      "required": [
+        "connection_name",
+        "database_name",
+        "schema_name",
+        "table_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "datamodel.setup_datamodel",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "setup_datamodel",
+    "description": "Setup a DataModel using existing connection and by creating a datamodel, dataset, and table.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        },
+        "datamodel_type": {
+          "type": "string",
+          "description": "datamodel_type parameter"
+        },
+        "connection_name": {
+          "type": "string",
+          "description": "connection_name parameter"
+        },
+        "database_name": {
+          "type": "string",
+          "description": "database_name parameter"
+        },
+        "schema_name": {
+          "type": "string",
+          "description": "schema_name parameter"
+        },
+        "tables": {
+          "type": "string",
+          "description": "tables parameter"
+        },
+        "dataset_name": {
+          "type": "string",
+          "description": "dataset_name parameter"
+        }
+      },
+      "required": [
+        "datamodel_name",
+        "datamodel_type",
+        "connection_name",
+        "database_name",
+        "schema_name",
+        "tables"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "datamodel",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "dashboard.add_dashboard_script",
+    "module": "dashboard",
+    "class": "Dashboard",
+    "method": "add_dashboard_script",
+    "description": "Adds or overwrites a script to a dashboard, temporarily changing ownership if required.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "dashboard_id": {
+          "type": "string",
+          "description": "dashboard_id parameter"
+        },
+        "script": {
+          "type": "string",
+          "description": "script parameter"
+        },
+        "executing_user": {
+          "type": "string",
+          "description": "executing_user parameter"
+        }
+      },
+      "required": [
+        "dashboard_id",
+        "script"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "dashboard",
+      "dashboards",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "dashboard.add_dashboard_shares",
+    "module": "dashboard",
+    "class": "Dashboard",
+    "method": "add_dashboard_shares",
+    "description": "Adds or updates shares for a dashboard, specifying users and groups along with their access rules.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "dashboard_id": {
+          "type": "string",
+          "description": "dashboard_id parameter"
+        },
+        "shares": {
+          "type": "string",
+          "description": "shares parameter"
+        }
+      },
+      "required": [
+        "dashboard_id",
+        "shares"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "dashboard",
+      "dashboards",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "dashboard.add_widget_script",
+    "module": "dashboard",
+    "class": "Dashboard",
+    "method": "add_widget_script",
+    "description": "Adds or overwrites a script for a specific widget within a dashboard.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "dashboard_id": {
+          "type": "string",
+          "description": "dashboard_id parameter"
+        },
+        "widget_id": {
+          "type": "string",
+          "description": "widget_id parameter"
+        },
+        "script": {
+          "type": "string",
+          "description": "script parameter"
+        },
+        "executing_user": {
+          "type": "string",
+          "description": "executing_user parameter"
+        }
+      },
+      "required": [
+        "dashboard_id",
+        "widget_id",
+        "script"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "dashboard",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "dashboard.get_all_dashboards",
+    "module": "dashboard",
+    "class": "Dashboard",
+    "method": "get_all_dashboards",
+    "description": "Retrieves all dashboards from the Sisense server.",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    },
+    "mutates": false,
+    "tags": [
+      "dashboard",
+      "dashboards",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "dashboard.get_dashboard_by_id",
+    "module": "dashboard",
+    "class": "Dashboard",
+    "method": "get_dashboard_by_id",
+    "description": "Retrieves a specific dashboard by its ID.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "dashboard_id": {
+          "type": "string",
+          "description": "dashboard_id parameter"
+        }
+      },
+      "required": [
+        "dashboard_id"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "dashboard",
+      "dashboards",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "dashboard.get_dashboard_by_name",
+    "module": "dashboard",
+    "class": "Dashboard",
+    "method": "get_dashboard_by_name",
+    "description": "Retrieves a specific dashboard by its name.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "dashboard_name": {
+          "type": "string",
+          "description": "dashboard_name parameter"
+        }
+      },
+      "required": [
+        "dashboard_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "dashboard",
+      "dashboards",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "dashboard.get_dashboard_columns",
+    "module": "dashboard",
+    "class": "Dashboard",
+    "method": "get_dashboard_columns",
+    "description": "Retrieves columns from a specific dashboard, including both widget and filter-level columns.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "dashboard_name": {
+          "type": "string",
+          "description": "dashboard_name parameter"
+        }
+      },
+      "required": [
+        "dashboard_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "dashboard",
+      "dashboards",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "dashboard.get_dashboard_share",
+    "module": "dashboard",
+    "class": "Dashboard",
+    "method": "get_dashboard_share",
+    "description": "Retrieves share details (users and groups) for a specific dashboard by title.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "dashboard_name": {
+          "type": "string",
+          "description": "dashboard_name parameter"
+        }
+      },
+      "required": [
+        "dashboard_name"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "dashboard",
+      "dashboards",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "migration.migrate_all_dashboards",
+    "module": "migration",
+    "class": "Migration",
+    "method": "migrate_all_dashboards",
+    "description": "Migrates all dashboards from the source to the target environment in batches.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "action parameter"
+        },
+        "republish": {
+          "type": "string",
+          "description": "republish parameter"
+        },
+        "migrate_share": {
+          "type": "string",
+          "description": "migrate_share parameter"
+        },
+        "change_ownership": {
+          "type": "string",
+          "description": "change_ownership parameter"
+        },
+        "batch_size": {
+          "type": "string",
+          "description": "batch_size parameter"
+        },
+        "sleep_time": {
+          "type": "string",
+          "description": "sleep_time parameter"
+        }
+      },
+      "required": []
+    },
+    "mutates": true,
+    "tags": [
+      "migration",
+      "dashboards",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "migration.migrate_all_datamodels",
+    "module": "migration",
+    "class": "Migration",
+    "method": "migrate_all_datamodels",
+    "description": "Migrates all data models from the source environment to the target environment in batches.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "dependencies": {
+          "type": "string",
+          "description": "dependencies parameter"
+        },
+        "shares": {
+          "type": "string",
+          "description": "shares parameter"
+        },
+        "batch_size": {
+          "type": "string",
+          "description": "batch_size parameter"
+        },
+        "sleep_time": {
+          "type": "string",
+          "description": "sleep_time parameter"
+        },
+        "action": {
+          "type": "string",
+          "description": "action parameter"
+        }
+      },
+      "required": []
+    },
+    "mutates": true,
+    "tags": [
+      "migration",
+      "datamodel",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "migration.migrate_all_groups",
+    "module": "migration",
+    "class": "Migration",
+    "method": "migrate_all_groups",
+    "description": "Migrates all groups from the source environment to the target environment using the bulk endpoint.",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    },
+    "mutates": false,
+    "tags": [
+      "migration",
+      "groups",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "migration.migrate_all_users",
+    "module": "migration",
+    "class": "Migration",
+    "method": "migrate_all_users",
+    "description": "Migrates all users from the source environment to the target environment using the bulk endpoint.",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    },
+    "mutates": false,
+    "tags": [
+      "migration",
+      "users",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "migration.migrate_dashboard_shares",
+    "module": "migration",
+    "class": "Migration",
+    "method": "migrate_dashboard_shares",
+    "description": "Migrates shares for specific dashboards from the source to the target environment.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "source_dashboard_ids": {
+          "type": "string",
+          "description": "source_dashboard_ids parameter"
+        },
+        "target_dashboard_ids": {
+          "type": "string",
+          "description": "target_dashboard_ids parameter"
+        },
+        "change_ownership": {
+          "type": "string",
+          "description": "change_ownership parameter"
+        }
+      },
+      "required": [
+        "source_dashboard_ids",
+        "target_dashboard_ids"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "migration",
+      "dashboards",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "migration.migrate_dashboards",
+    "module": "migration",
+    "class": "Migration",
+    "method": "migrate_dashboards",
+    "description": "Migrates specific dashboards from the source to the target environment using the bulk endpoint.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "dashboard_ids": {
+          "type": "string",
+          "description": "dashboard_ids parameter"
+        },
+        "dashboard_names": {
+          "type": "string",
+          "description": "dashboard_names parameter"
+        },
+        "action": {
+          "type": "string",
+          "description": "action parameter"
+        },
+        "republish": {
+          "type": "string",
+          "description": "republish parameter"
+        },
+        "migrate_share": {
+          "type": "string",
+          "description": "migrate_share parameter"
+        },
+        "change_ownership": {
+          "type": "string",
+          "description": "change_ownership parameter"
+        }
+      },
+      "required": []
+    },
+    "mutates": true,
+    "tags": [
+      "migration",
+      "dashboards",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "migration.migrate_datamodels",
+    "module": "migration",
+    "class": "Migration",
+    "method": "migrate_datamodels",
+    "description": "Migrates specific data models from the source environment to the target environment.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_ids": {
+          "type": "string",
+          "description": "datamodel_ids parameter"
+        },
+        "datamodel_names": {
+          "type": "string",
+          "description": "datamodel_names parameter"
+        },
+        "provider_connection_map": {
+          "type": "string",
+          "description": "provider_connection_map parameter"
+        },
+        "dependencies": {
+          "type": "string",
+          "description": "dependencies parameter"
+        },
+        "shares": {
+          "type": "string",
+          "description": "shares parameter"
+        },
+        "action": {
+          "type": "string",
+          "description": "action parameter"
+        },
+        "new_title": {
+          "type": "string",
+          "description": "new_title parameter"
+        }
+      },
+      "required": []
+    },
+    "mutates": true,
+    "tags": [
+      "migration",
+      "datamodel",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "migration.migrate_groups",
+    "module": "migration",
+    "class": "Migration",
+    "method": "migrate_groups",
+    "description": "Migrates specific groups from the source environment to the target environment using the bulk endpoint.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "group_name_list": {
+          "type": "string",
+          "description": "group_name_list parameter"
+        }
+      },
+      "required": [
+        "group_name_list"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "migration",
+      "groups",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  },
+  {
+    "tool_id": "migration.migrate_users",
+    "module": "migration",
+    "class": "Migration",
+    "method": "migrate_users",
+    "description": "Migrates specific users from the source environment to the target environment.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "user_name_list": {
+          "type": "string",
+          "description": "user_name_list parameter"
+        }
+      },
+      "required": [
+        "user_name_list"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "migration",
+      "users",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": []
+  }
+]

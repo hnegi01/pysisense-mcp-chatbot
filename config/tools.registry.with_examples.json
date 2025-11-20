@@ -1,0 +1,3014 @@
+[
+  {
+    "tool_id": "access.change_folder_and_dashboard_ownership",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "change_folder_and_dashboard_ownership",
+    "description": "Method to change the ownership of folders and optionally dashboards.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "executing_user": {
+          "type": "string",
+          "description": "executing_user parameter"
+        },
+        "folder_name": {
+          "type": "string",
+          "description": "folder_name parameter"
+        },
+        "new_owner_name": {
+          "type": "string",
+          "description": "new_owner_name parameter"
+        },
+        "original_owner_rule": {
+          "type": "string",
+          "description": "original_owner_rule parameter"
+        },
+        "change_dashboard_ownership": {
+          "type": "string",
+          "description": "change_dashboard_ownership parameter"
+        }
+      },
+      "required": [
+        "executing_user",
+        "folder_name",
+        "new_owner_name"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "access",
+      "dashboards",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Change ownership of the 'Sales' folder and its dashboards to the admin user",
+        "arguments": {
+          "executing_user": "sisense.admin@example.com",
+          "folder_name": "Sales",
+          "new_owner_name": "admin@example.com",
+          "original_owner_rule": "edit",
+          "change_dashboard_ownership": true
+        },
+        "notes": "Use this call to transfer ownership of a folder and its contents to a new user, while maintaining the original owner's edit permissions"
+      },
+      {
+        "user_query": "Transfer ownership of the 'Marketing' folder to a new team lead, without changing dashboard ownership",
+        "arguments": {
+          "executing_user": "sisense.admin@example.com",
+          "folder_name": "Marketing",
+          "new_owner_name": "team.lead@example.com",
+          "original_owner_rule": "view",
+          "change_dashboard_ownership": false
+        },
+        "notes": "Use this call to change the owner of a folder without affecting the ownership of its dashboards"
+      },
+      {
+        "user_query": "Change ownership of the 'IT' folder and its dashboards to a new department head, with the original owner having view permissions",
+        "arguments": {
+          "executing_user": "sisense.admin@example.com",
+          "folder_name": "IT",
+          "new_owner_name": "department.head@example.com",
+          "original_owner_rule": "view",
+          "change_dashboard_ownership": true
+        },
+        "notes": "Use this call to transfer ownership of a folder and its contents to a new user, while maintaining the original owner's view permissions"
+      }
+    ]
+  },
+  {
+    "tool_id": "access.create_schedule_build",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "create_schedule_build",
+    "description": "Method to create a schedule build for a DataModel.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        },
+        "build_type": {
+          "type": "string",
+          "description": "build_type parameter"
+        },
+        "days": {
+          "type": "string",
+          "description": "days parameter"
+        },
+        "hour": {
+          "type": "string",
+          "description": "hour parameter"
+        },
+        "minute": {
+          "type": "string",
+          "description": "minute parameter"
+        },
+        "interval_days": {
+          "type": "string",
+          "description": "interval_days parameter"
+        },
+        "interval_hours": {
+          "type": "string",
+          "description": "interval_hours parameter"
+        },
+        "interval_minutes": {
+          "type": "string",
+          "description": "interval_minutes parameter"
+        }
+      },
+      "required": [
+        "datamodel_name"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "access",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Create a daily schedule to build the Sample ECommerce DataModel at 2 AM UTC",
+        "arguments": {
+          "datamodel_name": "Sample ECommerce",
+          "days": [
+            "*"
+          ],
+          "hour": "2",
+          "minute": "0"
+        },
+        "notes": "Use this to automate daily builds of a specific DataModel"
+      },
+      {
+        "user_query": "Schedule a build for the pysense_databricks_ec DataModel every 2 days and 1 hour",
+        "arguments": {
+          "datamodel_name": "pysense_databricks_ec",
+          "interval_days": "2",
+          "interval_hours": "1"
+        },
+        "notes": "Use this for less frequent, automated builds based on interval"
+      },
+      {
+        "user_query": "Create a schedule to build the Sample ECommerce DataModel on Mondays, Wednesdays, and Fridays at 10 PM UTC",
+        "arguments": {
+          "datamodel_name": "Sample ECommerce",
+          "days": [
+            "MON",
+            "WED",
+            "FRI"
+          ],
+          "hour": "22",
+          "minute": "0"
+        },
+        "notes": "Use this for specific weekday builds at a certain time"
+      }
+    ]
+  },
+  {
+    "tool_id": "access.create_user",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "create_user",
+    "description": "Creates a new user by processing the provided user data to replace role",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "user_data": {
+          "type": "string",
+          "description": "user_data parameter"
+        }
+      },
+      "required": [
+        "user_data"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "access",
+      "users",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Create a new user with the email john.smith@example.com and role of dataDesigner",
+        "arguments": {
+          "user_data": "{\"email\": \"john.smith@example.com\", \"firstName\": \"John\", \"lastName\": \"Smith\", \"role\": \"dataDesigner\"}"
+        },
+        "notes": "Use this call to add a new user to the system with specific details"
+      },
+      {
+        "user_query": "Add a new admin user with custom preferences",
+        "arguments": {
+          "user_data": "{\"email\": \"jane.doe@example.com\", \"firstName\": \"Jane\", \"lastName\": \"Doe\", \"role\": \"admin\", \"preferences\": {\"language\": \"fr-FR\"}}"
+        },
+        "notes": "This example demonstrates creating an admin user with specific language preferences"
+      },
+      {
+        "user_query": "Create a user with groups and password",
+        "arguments": {
+          "user_data": "{\"email\": \"bob.johnson@example.com\", \"firstName\": \"Bob\", \"lastName\": \"Johnson\", \"groups\": [\"group1\", \"group2\"], \"password\": \"Sisense123!\"}"
+        },
+        "notes": "Use this call to create a new user who is part of specific groups and has a predefined password"
+      }
+    ]
+  },
+  {
+    "tool_id": "access.delete_user",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "delete_user",
+    "description": "Deletes a user by their email (username).",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "user_name": {
+          "type": "string",
+          "description": "user_name parameter"
+        }
+      },
+      "required": [
+        "user_name"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "access",
+      "users",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Delete the user with email john.doe@example.com",
+        "arguments": {
+          "user_name": "john.doe@example.com"
+        },
+        "notes": "Use this call to remove a user from the Sisense system when their access is no longer needed."
+      },
+      {
+        "user_query": "Remove the user jane.smith@example.com from the system",
+        "arguments": {
+          "user_name": "jane.smith@example.com"
+        },
+        "notes": "This call is useful for cleaning up user accounts that are no longer active or required."
+      },
+      {
+        "user_query": "Delete the user account for bob.johnson@example.com",
+        "arguments": {
+          "user_name": "bob.johnson@example.com"
+        },
+        "notes": "Administrators can use this tool to manage user access and ensure that only authorized personnel have access to Sisense resources."
+      }
+    ]
+  },
+  {
+    "tool_id": "access.get_all_dashboard_shares",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "get_all_dashboard_shares",
+    "description": "Method to retrieve all dashboard shares, including user and group details for each shared dashboard.",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    },
+    "mutates": false,
+    "tags": [
+      "access",
+      "dashboards",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Get all dashboard shares to review access permissions",
+        "arguments": {},
+        "notes": "Use this call to retrieve all dashboard shares, including user and group details, for auditing or access management purposes."
+      },
+      {
+        "user_query": "Retrieve dashboard shares for reporting and analytics",
+        "arguments": {},
+        "notes": "This call helps in generating reports on dashboard usage and access patterns across the organization."
+      },
+      {
+        "user_query": "Audit dashboard shares before making changes to user roles",
+        "arguments": {},
+        "notes": "Call this method to get a snapshot of current dashboard shares before updating user roles or permissions to ensure a smooth transition."
+      }
+    ]
+  },
+  {
+    "tool_id": "access.get_datamodel_columns",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "get_datamodel_columns",
+    "description": "Retrieves columns from a DataModel by collecting them from its datasets and tables.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        }
+      },
+      "required": [
+        "datamodel_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "access",
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "What columns are available in the Sample ECommerce DataModel?",
+        "arguments": {
+          "datamodel_name": "Sample ECommerce"
+        },
+        "notes": "Retrieve columns for a specific DataModel to understand its structure"
+      },
+      {
+        "user_query": "Get all columns from the DataModel used for sales analytics",
+        "arguments": {
+          "datamodel_name": "Sales Analytics DataModel"
+        },
+        "notes": "Use this to explore and document the data structure of a specific DataModel"
+      },
+      {
+        "user_query": "List columns in the newly created DataModel for customer behavior analysis",
+        "arguments": {
+          "datamodel_name": "Customer Behavior Analysis"
+        },
+        "notes": "Verify the columns collected from datasets and tables in a new DataModel"
+      }
+    ]
+  },
+  {
+    "tool_id": "access.get_group",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "get_group",
+    "description": "Retrieves group details by their name.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "name parameter"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "access",
+      "groups",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Get details of the Admins group",
+        "arguments": {
+          "name": "Admins"
+        },
+        "notes": "Retrieve information about a specific group by its name, useful for auditing or managing group permissions"
+      },
+      {
+        "user_query": "Fetch information about the Developers group",
+        "arguments": {
+          "name": "Developers"
+        },
+        "notes": "Use this call to get details about a group, such as its name, which can be useful for assigning users to the correct groups"
+      },
+      {
+        "user_query": "Retrieve details of the Finance group",
+        "arguments": {
+          "name": "Finance"
+        },
+        "notes": "This example demonstrates how to retrieve group details, which can be necessary for managing access control and permissions within Sisense"
+      }
+    ]
+  },
+  {
+    "tool_id": "access.get_unused_columns",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "get_unused_columns",
+    "description": "Identify unused columns in a given DataModel by comparing all available columns against the columns",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        }
+      },
+      "required": [
+        "datamodel_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "access",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Find unused columns in the Sample ECommerce DataModel",
+        "arguments": {
+          "datamodel_name": "Sample ECommerce"
+        },
+        "notes": "Use this call to identify unused columns in a specific DataModel for optimization purposes"
+      },
+      {
+        "user_query": "Identify unused columns in the HR DataModel for data cleanup",
+        "arguments": {
+          "datamodel_name": "HR"
+        },
+        "notes": "This call helps in removing unused columns to improve data model performance and reduce storage"
+      },
+      {
+        "user_query": "List unused columns in the Sales DataModel to refine the data structure",
+        "arguments": {
+          "datamodel_name": "Sales"
+        },
+        "notes": "Use this to analyze and potentially remove unused columns, enhancing the overall efficiency of the Sales DataModel"
+      }
+    ]
+  },
+  {
+    "tool_id": "access.get_user",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "get_user",
+    "description": "Retrieves user details by their email (username) and expands the",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "user_name": {
+          "type": "string",
+          "description": "user_name parameter"
+        }
+      },
+      "required": [
+        "user_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "access",
+      "users",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Get details of the user with email john.doe@example.com",
+        "arguments": {
+          "user_name": "john.doe@example.com"
+        },
+        "notes": "Retrieve user information by their email address"
+      },
+      {
+        "user_query": "Fetch information for admin@sisense.com user",
+        "arguments": {
+          "user_name": "admin@sisense.com"
+        },
+        "notes": "Use this call to get details of a specific user for administrative purposes"
+      },
+      {
+        "user_query": "Get user details for jane.smith@example.com",
+        "arguments": {
+          "user_name": "jane.smith@example.com"
+        },
+        "notes": "Example usage for retrieving user information for a specific email address"
+      }
+    ]
+  },
+  {
+    "tool_id": "access.get_users_all",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "get_users_all",
+    "description": "Retrieves user details along with tenant, group, and role information.",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    },
+    "mutates": false,
+    "tags": [
+      "access",
+      "users",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Get all users in the system along with their roles and groups",
+        "arguments": {},
+        "notes": "Use this call to retrieve a list of all users, including their tenant, group, and role information, for administrative purposes"
+      },
+      {
+        "user_query": "Retrieve user details for reporting and analytics purposes",
+        "arguments": {},
+        "notes": "This call is useful for generating reports or performing analytics on user data, as it provides comprehensive details about each user"
+      },
+      {
+        "user_query": "Fetch all user information to update the internal directory",
+        "arguments": {},
+        "notes": "Use this call to synchronize user data with an internal directory or to update user information across different systems"
+      }
+    ]
+  },
+  {
+    "tool_id": "access.update_user",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "update_user",
+    "description": "Updates a user by their User Name.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "user_name": {
+          "type": "string",
+          "description": "user_name parameter"
+        },
+        "user_data": {
+          "type": "string",
+          "description": "user_data parameter"
+        }
+      },
+      "required": [
+        "user_name",
+        "user_data"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "access",
+      "users",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Update the first name and last name of user john.doe@example.com",
+        "arguments": {
+          "user_name": "john.doe@example.com",
+          "user_data": "{\"firstName\": \"John\", \"lastName\": \"Doe\"}"
+        },
+        "notes": "Update user details, such as first and last names, for a specific user."
+      },
+      {
+        "user_query": "Change the role of user jane.smith@example.com to dataDesigner",
+        "arguments": {
+          "user_name": "jane.smith@example.com",
+          "user_data": "{\"role\": \"dataDesigner\"}"
+        },
+        "notes": "Update the role of a user, which affects their permissions and access within Sisense."
+      },
+      {
+        "user_query": "Update the language preference of user mike.jones@example.com to Spanish",
+        "arguments": {
+          "user_name": "mike.jones@example.com",
+          "user_data": "{\"preferences\": {\"language\": \"es-ES\"}}"
+        },
+        "notes": "Update user preferences, such as language settings, to enhance their Sisense experience."
+      }
+    ]
+  },
+  {
+    "tool_id": "access.users_per_group",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "users_per_group",
+    "description": "Retrieves all users within a specific group by name.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "group_name": {
+          "type": "string",
+          "description": "group_name parameter"
+        }
+      },
+      "required": [
+        "group_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "access",
+      "users",
+      "groups",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "What users are in the Admins group?",
+        "arguments": {
+          "group_name": "Admins"
+        },
+        "notes": "Retrieve a list of users belonging to a specific group, useful for access management and auditing."
+      },
+      {
+        "user_query": "List all users in the Developers group",
+        "arguments": {
+          "group_name": "Developers"
+        },
+        "notes": "Fetch users in a particular group for permission management or to assign tasks."
+      },
+      {
+        "user_query": "Who are the members of the Finance team?",
+        "arguments": {
+          "group_name": "Finance"
+        },
+        "notes": "Identify users within a specific department or team for targeted communication or access control."
+      }
+    ]
+  },
+  {
+    "tool_id": "access.users_per_group_all",
+    "module": "access",
+    "class": "AccessManagement",
+    "method": "users_per_group_all",
+    "description": "Retrieves all groups and maps them with the users belonging to those",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    },
+    "mutates": false,
+    "tags": [
+      "access",
+      "users",
+      "groups",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "What are all the groups and their associated users in the system?",
+        "arguments": {},
+        "notes": "Use this call to retrieve a list of all groups and the users belonging to each group for access management and auditing purposes."
+      },
+      {
+        "user_query": "Get all groups with their users for reporting purposes",
+        "arguments": {},
+        "notes": "This call is useful for generating reports on group membership and user access within the Sisense environment."
+      },
+      {
+        "user_query": "List all groups and their associated users to plan access control",
+        "arguments": {},
+        "notes": "Use this call to plan and manage access control by understanding which users belong to which groups, facilitating the assignment of roles and permissions."
+      }
+    ]
+  },
+  {
+    "tool_id": "datamodel.add_datamodel_shares",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "add_datamodel_shares",
+    "description": "Adds share entries (users and groups) to a DataModel.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        },
+        "shares": {
+          "type": "string",
+          "description": "shares parameter"
+        }
+      },
+      "required": [
+        "datamodel_name",
+        "shares"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "datamodel",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Add user and group shares to the sales datamodel",
+        "arguments": {
+          "datamodel_name": "sales_datamodel",
+          "shares": "[{\"name\": \"john.doe@sisense.com\", \"type\": \"user\", \"permission\": \"EDIT\"}, {\"name\": \"sales_team\", \"type\": \"group\", \"permission\": \"USE\"}]"
+        },
+        "notes": "Use this call to grant access to a datamodel for specific users or groups"
+      },
+      {
+        "user_query": "Share the marketing datamodel with the marketing department",
+        "arguments": {
+          "datamodel_name": "marketing_datamodel",
+          "shares": "[{\"name\": \"jane.smith@sisense.com\", \"type\": \"user\", \"permission\": \"READ\"}, {\"name\": \"marketing_department\", \"type\": \"group\", \"permission\": \"USE\"}]"
+        },
+        "notes": "Use this call to share a datamodel with a specific department or team"
+      },
+      {
+        "user_query": "Grant edit permission to a user for the customer datamodel",
+        "arguments": {
+          "datamodel_name": "customer_datamodel",
+          "shares": "[{\"name\": \"bob.johnson@sisense.com\", \"type\": \"user\", \"permission\": \"EDIT\"}]"
+        },
+        "notes": "Use this call to grant edit permission to a specific user for a datamodel"
+      }
+    ]
+  },
+  {
+    "tool_id": "datamodel.create_connections",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "create_connections",
+    "description": "Creates a new connection using the provided payload.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "connection_payload": {
+          "type": "string",
+          "description": "connection_payload parameter"
+        }
+      },
+      "required": [
+        "connection_payload"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Create a new connection to Athena using the provided payload",
+        "arguments": {
+          "connection_payload": "{\"name\":\"athena_connection\",\"description\":\"Athena connection\",\"region\":\"us-east-1\",\"s3_output_location\":\"s3://pysense-sdk/athena-output/\",\"aws_access_key\":\"XYZ1234567890\",\"aws_secret_key\":\"XYZ1234567890\"}"
+        },
+        "notes": "Use this call to create a new connection to Athena for data modeling purposes"
+      },
+      {
+        "user_query": "Create a new connection to Redshift using the provided payload",
+        "arguments": {
+          "connection_payload": "{\"name\":\"redshift_connection\",\"description\":\"Redshift connection\",\"server\":\"examplecluster.abc123xyz789.us-west-2.redshift.amazonaws.com:5439\",\"username\":\"XYZ@sisense.com\",\"password\":\"password\"}"
+        },
+        "notes": "Use this call to create a new connection to Redshift for data modeling purposes"
+      },
+      {
+        "user_query": "Create a new connection to BigQuery using the provided payload",
+        "arguments": {
+          "connection_payload": "{\"name\":\"bigquery_connection\",\"description\":\"BigQuery connection\",\"use_service_account\":true,\"service_account_key_path\":\"/opt/sisense/storage/gcp/service_account_key.json\"}"
+        },
+        "notes": "Use this call to create a new connection to BigQuery for data modeling purposes"
+      }
+    ]
+  },
+  {
+    "tool_id": "datamodel.create_datamodel",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "create_datamodel",
+    "description": "Create a DataModel. Use datamodel_type='extract' for Elasticube (aka EC) and 'live' for LIVE models.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "Name of the DataModel"
+        },
+        "datamodel_type": {
+          "type": "string",
+          "enum": ["extract", "live"],
+          "description": "Use 'extract' for Elasticube/EC; use 'live' for LIVE."
+        }
+      },
+      "required": [
+        "datamodel_name",
+        "datamodel_type"
+      ]
+    },
+    "mutates": true,
+    "tags": ["datamodel","create","elasticube","ec","live","EC"],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Create a new ELASTICUBE DataModel named MyDataModel_ec",
+        "arguments": {
+          "datamodel_name": "MyDataModel_ec",
+          "datamodel_type": "extract"
+        },
+        "notes": "Use this call to create a new DataModel for data warehousing and business intelligence purposes"
+      },
+      {
+        "user_query": "Create a new LIVE DataModel named MyDataModel_live",
+        "arguments": {
+          "datamodel_name": "MyDataModel_live",
+          "datamodel_type": "live"
+        },
+        "notes": "Use this call to create a new DataModel for real-time data analytics and reporting"
+      },
+      {
+        "user_query": "Create a new DataModel named MyDataModel_dev for development purposes",
+        "arguments": {
+          "datamodel_name": "MyDataModel_dev",
+          "datamodel_type": "extract"
+        },
+        "notes": "Use this call to create a new DataModel for testing and development purposes, such as data modeling and ETL testing"
+      }
+    ]
+  },
+  {
+    "tool_id": "datamodel.create_dataset",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "create_dataset",
+    "description": "Creates a new dataset in the specified DataModel.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        },
+        "connection_name": {
+          "type": "string",
+          "description": "connection_name parameter"
+        },
+        "database_name": {
+          "type": "string",
+          "description": "database_name parameter"
+        },
+        "schema_name": {
+          "type": "string",
+          "description": "schema_name parameter"
+        },
+        "dataset_name": {
+          "type": "string",
+          "description": "dataset_name parameter"
+        }
+      },
+      "required": [
+        "datamodel_name",
+        "connection_name",
+        "database_name",
+        "schema_name"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Create a new dataset in the MyDataModel_ec DataModel from the pysense_databricks connection",
+        "arguments": {
+          "datamodel_name": "MyDataModel_ec",
+          "connection_name": "pysense_databricks",
+          "database_name": "samples",
+          "schema_name": "nyctaxi",
+          "dataset_name": "trips_data"
+        },
+        "notes": "Use this call to create a new dataset in an existing DataModel for further analysis or reporting"
+      },
+      {
+        "user_query": "Create a dataset in the MyDataModel_live DataModel for real-time analytics",
+        "arguments": {
+          "datamodel_name": "MyDataModel_live",
+          "connection_name": "pysense_bigquery",
+          "database_name": "fda_food",
+          "schema_name": "fda_food",
+          "dataset_name": "food_enforcement_data"
+        },
+        "notes": "This call is useful for setting up real-time data analytics pipelines in Sisense"
+      },
+      {
+        "user_query": "Initialize a new dataset for the pysense_databricks_ec DataModel",
+        "arguments": {
+          "datamodel_name": "pysense_databricks_ec",
+          "connection_name": "pysense_databricks",
+          "database_name": "samples",
+          "schema_name": "tpch",
+          "dataset_name": "customer_data"
+        },
+        "notes": "Use this example to start working with a new dataset in an existing DataModel, especially after adding new connections or tables"
+      }
+    ]
+  },
+  {
+    "tool_id": "datamodel.create_table",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "create_table",
+    "description": "Create a new table in the specified DataModel.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        },
+        "table_name": {
+          "type": "string",
+          "description": "table_name parameter"
+        },
+        "database_name": {
+          "type": "string",
+          "description": "database_name parameter"
+        },
+        "schema_name": {
+          "type": "string",
+          "description": "schema_name parameter"
+        },
+        "dataset_id": {
+          "type": "string",
+          "description": "dataset_id parameter"
+        },
+        "import_query": {
+          "type": "string",
+          "description": "import_query parameter"
+        },
+        "description": {
+          "type": "string",
+          "description": "description parameter"
+        },
+        "tags": {
+          "type": "string",
+          "description": "tags parameter"
+        },
+        "build_behavior_config": {
+          "type": "string",
+          "description": "build_behavior_config parameter"
+        }
+      },
+      "required": [
+        "datamodel_name",
+        "table_name"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "datamodel",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Create a new table named trips in the MyDataModel_ec DataModel",
+        "arguments": {
+          "datamodel_name": "MyDataModel_ec",
+          "table_name": "trips",
+          "database_name": "samples",
+          "schema_name": "nyctaxi",
+          "dataset_id": "945ce5ac-ce68-4a5f-a4e8-577631023add",
+          "import_query": "SELECT * FROM `nyctaxi`.`trips` LIMIT 10",
+          "description": "Trips data for FY23",
+          "tags": [
+            "trips",
+            "fact"
+          ],
+          "build_behavior_config": {
+            "mode": "increment",
+            "column_name": "tpep_pickup_datetime"
+          }
+        },
+        "notes": "Use this call to create a new table in an existing DataModel with full configuration"
+      },
+      {
+        "user_query": "Create a new table named customer in the MyDataModel_live DataModel with minimal inputs",
+        "arguments": {
+          "datamodel_name": "MyDataModel_live",
+          "table_name": "customer",
+          "database_name": "samples",
+          "schema_name": "tpch"
+        },
+        "notes": "Use this call to create a new table in an existing LIVE DataModel with minimal configuration, letting the system handle optional parameters"
+      },
+      {
+        "user_query": "Create a new table named housing in the MyDataModel_ec DataModel with custom build behavior",
+        "arguments": {
+          "datamodel_name": "MyDataModel_ec",
+          "table_name": "housing",
+          "database_name": "fda_food",
+          "schema_name": "housing",
+          "dataset_id": "945ce5ac-ce68-4a5f-a4e8-577631023add",
+          "import_query": "SELECT * FROM `fda_food`.`housing` LIMIT 10",
+          "description": "Housing table for ML use case",
+          "tags": [
+            "housing",
+            "ML"
+          ],
+          "build_behavior_config": {
+            "mode": "replace",
+            "column_name": ""
+          }
+        },
+        "notes": "Use this call to create a new table in an existing DataModel with custom build behavior configuration"
+      }
+    ]
+  },
+  {
+    "tool_id": "datamodel.deploy_datamodel",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "deploy_datamodel",
+    "description": "Build / start / deploy / publish a DataModel. Use this for running a build on an Elasticube (extract) model or publishing a LIVE model. Not for setup, creation, or configuration.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "Name of the DataModel to run."
+        },
+        "build_type": {
+          "type": "string",
+          "enum": ["full", "by_table"],
+          "description": "Build strategy for EXTRACT/Elasticube models. Ignored for LIVE."
+        },
+        "row_limit": {
+          "type": "integer",
+          "description": "Optional row limit for the build (EXTRACT only)."
+        },
+        "schema_origin": {
+          "type": "string",
+          "enum": ["latest", "schema_changes"],
+          "description": "Which schema to build against (EXTRACT only)."
+        }
+      },
+      "required": [
+        "datamodel_name"
+      ]
+    },
+    "mutates": true,
+    "tags": ["datamodel", "write", "build", "start", "deploy", "publish"],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Deploy/Build the MyDataModel_ec DataModel with a full build and 1000 row limit",
+        "arguments": {
+          "datamodel_name": "MyDataModel_ec",
+          "build_type": "full",
+          "row_limit": 1000,
+          "schema_origin": "latest"
+        },
+        "notes": "Use this call to deploy an ELASTICUBE DataModel with specific build settings"
+      },
+      {
+        "user_query": "Publish the MyDataModel_live DataModel",
+        "arguments": {
+          "datamodel_name": "MyDataModel_live"
+        },
+        "notes": "Use this call to publish a LIVE DataModel without specifying build settings"
+      },
+      {
+        "user_query": "Deploy/Build the MyDataModel_ec2 DataModel with a by-table build and schema changes",
+        "arguments": {
+          "datamodel_name": "MyDataModel_ec2",
+          "build_type": "by_table",
+          "row_limit": 5000,
+          "schema_origin": "schema_changes"
+        },
+        "notes": "Use this call to deploy an ELASTICUBE DataModel with a by-table build and schema changes"
+      }
+    ]
+  },
+  {
+    "tool_id": "datamodel.describe_datamodel",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "describe_datamodel",
+    "description": "Retrieve detailed datamodel structure in a flat, row-based format suitable for DataFrame or CSV export.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        }
+      },
+      "required": [
+        "datamodel_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Get the detailed structure of the sales datamodel",
+        "arguments": {
+          "datamodel_name": "sales_datamodel"
+        },
+        "notes": "Use this to understand the schema and relationships within a specific datamodel"
+      },
+      {
+        "user_query": "Describe the customer analytics datamodel for reporting purposes",
+        "arguments": {
+          "datamodel_name": "customer_analytics"
+        },
+        "notes": "Utilize this for generating reports or when needing to export datamodel information to CSV"
+      },
+      {
+        "user_query": "Retrieve the structure of the marketing dashboard datamodel",
+        "arguments": {
+          "datamodel_name": "marketing_dashboard"
+        },
+        "notes": "Helpful for data discovery and planning data visualizations based on the datamodel's schema"
+      }
+    ]
+  },
+  {
+    "tool_id": "datamodel.describe_datamodel_raw",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "describe_datamodel_raw",
+    "description": "Retrieve detailed information about a specific DataModel, including share details.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        }
+      },
+      "required": [
+        "datamodel_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Get detailed information about the DataModel named 'pysense_databricks_ec'",
+        "arguments": {
+          "datamodel_name": "pysense_databricks_ec"
+        },
+        "notes": "Use this call to retrieve detailed information about a specific DataModel, including share details."
+      },
+      {
+        "user_query": "Retrieve raw description of the DataModel 'my_datamodel_live'",
+        "arguments": {
+          "datamodel_name": "my_datamodel_live"
+        },
+        "notes": "This call is useful for getting raw information about a DataModel, which can be used for further analysis or processing."
+      },
+      {
+        "user_query": "Get detailed information about the DataModel named 'sales_ec' to analyze its structure",
+        "arguments": {
+          "datamodel_name": "sales_ec"
+        },
+        "notes": "Use this call to analyze the structure of a specific DataModel, including its tables, fields, and relationships."
+      }
+    ]
+  },
+  {
+    "tool_id": "datamodel.generate_connections_payload",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "generate_connections_payload",
+    "description": "Generates the appropriate connections payload based on the datasource type.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datasource_type": {
+          "type": "string",
+          "description": "datasource_type parameter"
+        },
+        "connection_params": {
+          "type": "string",
+          "description": "connection_params parameter"
+        }
+      },
+      "required": [
+        "datasource_type",
+        "connection_params"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Generate a connection payload for an Athena data source",
+        "arguments": {
+          "datasource_type": "Athena",
+          "connection_params": {
+            "name": "athena_connection",
+            "description": "Athena connection for analytics",
+            "region": "us-east-1",
+            "s3_output_location": "s3://sisense-athena/output/",
+            "aws_access_key": "AKIAIOSFODNN7EXAMPLE",
+            "aws_secret_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            "schema": "sisense",
+            "additional_parameters": "timeout=60;"
+          }
+        },
+        "notes": "Use this call to generate a connection payload for an Athena data source before creating a connection in Sisense"
+      },
+      {
+        "user_query": "Generate a connection payload for a Redshift data source",
+        "arguments": {
+          "datasource_type": "RedShift",
+          "connection_params": {
+            "name": "redshift_connection",
+            "description": "Redshift connection for reporting",
+            "server": "examplecluster.abc123xyz789.us-west-2.redshift.amazonaws.com:5439",
+            "username": "awsuser",
+            "password": "password123",
+            "default_database": "dev",
+            "additional_parameters": ""
+          }
+        },
+        "notes": "Use this call to generate a connection payload for a Redshift data source before creating a connection in Sisense"
+      },
+      {
+        "user_query": "Generate a connection payload for a BigQuery data source",
+        "arguments": {
+          "datasource_type": "BigQuery",
+          "connection_params": {
+            "name": "bigquery_connection",
+            "description": "BigQuery connection for data science",
+            "use_service_account": true,
+            "service_account_key_path": "/path/to/service_account_key.json",
+            "use_proxy_server": false,
+            "use_dynamic_schema": false,
+            "record_field_flattening_level": "2",
+            "unnest_arrays": false,
+            "allow_large_results": false,
+            "use_storage_api": true,
+            "additional_parameters": "timeout=60;",
+            "database": "bigquery-public-data"
+          }
+        },
+        "notes": "Use this call to generate a connection payload for a BigQuery data source before creating a connection in Sisense"
+      }
+    ]
+  },
+  {
+    "tool_id": "datamodel.get_all_datamodel",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "get_all_datamodel",
+    "description": "Retrieves metadata details of all DataModels using an undocumented internal API.",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    },
+    "mutates": false,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Get all DataModels in the system",
+        "arguments": {},
+        "notes": "Use this call to retrieve metadata details of all DataModels in the system"
+      },
+      {
+        "user_query": "Retrieve all DataModels for further processing",
+        "arguments": {},
+        "notes": "This call is useful when you need to iterate over all DataModels, for example, to update their shares or datasecurity"
+      },
+      {
+        "user_query": "Initialize a script that needs to work with all DataModels",
+        "arguments": {},
+        "notes": "Call this method at the beginning of a script to fetch all DataModels and store them in a variable for later use"
+      }
+    ]
+  },
+  {
+    "tool_id": "datamodel.get_connection",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "get_connection",
+    "description": "Retrieves a Connection by its name.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "connection_name": {
+          "type": "string",
+          "description": "connection_name parameter"
+        }
+      },
+      "required": [
+        "connection_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Get the connection details for my databricks connection",
+        "arguments": {
+          "connection_name": "pysense_databricks"
+        },
+        "notes": "Use this to retrieve connection information for a specific connection name"
+      },
+      {
+        "user_query": "Retrieve the connection configuration for my athena connection",
+        "arguments": {
+          "connection_name": "athena_basic"
+        },
+        "notes": "Use this to fetch connection details for a specific connection, useful for troubleshooting or auditing"
+      },
+      {
+        "user_query": "Get the connection info for my redshift connection",
+        "arguments": {
+          "connection_name": "pysense_redshift"
+        },
+        "notes": "Use this to get connection information for a specific redshift connection, helpful for data modeling or ETL processes"
+      }
+    ]
+  },
+  {
+    "tool_id": "datamodel.get_data",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "get_data",
+    "description": "Retrieves data from a specific table in a DataModel and returns it as a list of dicts",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        },
+        "table_name": {
+          "type": "string",
+          "description": "table_name parameter"
+        },
+        "query": {
+          "type": "string",
+          "description": "query parameter"
+        }
+      },
+      "required": [
+        "datamodel_name",
+        "table_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Get all rows from the trips table in the nyctaxi DataModel",
+        "arguments": {
+          "datamodel_name": "nyctaxi",
+          "table_name": "trips",
+          "query": "SELECT * FROM trips"
+        },
+        "notes": "Use this to retrieve all data from a specific table for analysis or reporting"
+      },
+      {
+        "user_query": "Count the number of records in the customers table in the fda_food DataModel",
+        "arguments": {
+          "datamodel_name": "fda_food",
+          "table_name": "customers",
+          "query": "SELECT COUNT(*) FROM customers"
+        },
+        "notes": "Use this to quickly get the row count of a table for data validation or monitoring"
+      },
+      {
+        "user_query": "Retrieve specific columns from the housing table in the samples DataModel",
+        "arguments": {
+          "datamodel_name": "samples",
+          "table_name": "housing",
+          "query": "SELECT latitude, longitude, price FROM housing"
+        },
+        "notes": "Use this to fetch specific data columns for data science tasks or ad-hoc queries"
+      }
+    ]
+  },
+  {
+    "tool_id": "datamodel.get_datamodel",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "get_datamodel",
+    "description": "Retrieves a DataModel by its name.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        }
+      },
+      "required": [
+        "datamodel_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Get the DataModel named 'pysense_databricks_ec'",
+        "arguments": {
+          "datamodel_name": "pysense_databricks_ec"
+        },
+        "notes": "Retrieve a specific DataModel by its name for further analysis or configuration"
+      },
+      {
+        "user_query": "Retrieve the DataModel 'my_live_datamodel' for live data analysis",
+        "arguments": {
+          "datamodel_name": "my_live_datamodel"
+        },
+        "notes": "Fetch a live DataModel for real-time data insights and reporting"
+      },
+      {
+        "user_query": "Get the 'sales_ec' DataModel for elasticube analysis",
+        "arguments": {
+          "datamodel_name": "sales_ec"
+        },
+        "notes": "Retrieve an elasticube DataModel for historical data analysis and business intelligence"
+      }
+    ]
+  },
+  {
+    "tool_id": "datamodel.get_datamodel_shares",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "get_datamodel_shares",
+    "description": "Retrieves all share entries (users and groups) for a given DataModel in flat row format.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        }
+      },
+      "required": [
+        "datamodel_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Get all shares for the DataModel named 'Sales'",
+        "arguments": {
+          "datamodel_name": "Sales"
+        },
+        "notes": "Retrieve sharing information for a specific DataModel"
+      },
+      {
+        "user_query": "List all users and groups with access to the 'Marketing' DataModel",
+        "arguments": {
+          "datamodel_name": "Marketing"
+        },
+        "notes": "Audit sharing permissions for a DataModel"
+      },
+      {
+        "user_query": "Show shares for the 'HR' DataModel to configure access control",
+        "arguments": {
+          "datamodel_name": "HR"
+        },
+        "notes": "Configure access control by retrieving current shares for a DataModel"
+      }
+    ]
+  },
+  {
+    "tool_id": "datamodel.get_datasecurity",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "get_datasecurity",
+    "description": "Retrieves datasecurity table and column entries for a given DataModel in flat row format.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        }
+      },
+      "required": [
+        "datamodel_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Get datasecurity table and column entries for the pysense_databricks DataModel",
+        "arguments": {
+          "datamodel_name": "pysense_databricks"
+        },
+        "notes": "Use this call to retrieve datasecurity details for a specific DataModel"
+      },
+      {
+        "user_query": "Retrieve datasecurity information for the sales DataModel",
+        "arguments": {
+          "datamodel_name": "sales"
+        },
+        "notes": "This call is useful for understanding data access permissions for a specific DataModel"
+      },
+      {
+        "user_query": "Get datasecurity table and column entries for the marketing_data DataModel",
+        "arguments": {
+          "datamodel_name": "marketing_data"
+        },
+        "notes": "Use this call to audit data security settings for a specific DataModel"
+      }
+    ]
+  },
+  {
+    "tool_id": "datamodel.get_datasecurity_detail",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "get_datasecurity_detail",
+    "description": "Retrieves detailed datasecurity rules for a specific DataModel, including share-level visibility.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        }
+      },
+      "required": [
+        "datamodel_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "datamodel",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Get detailed datasecurity rules for the Sales DataModel",
+        "arguments": {
+          "datamodel_name": "Sales"
+        },
+        "notes": "Use this call to retrieve detailed datasecurity rules, including share-level visibility, for a specific DataModel."
+      },
+      {
+        "user_query": "Retrieve datasecurity details for the Marketing DataModel to configure access controls",
+        "arguments": {
+          "datamodel_name": "Marketing"
+        },
+        "notes": "This call helps administrators understand and manage datasecurity settings for a specific DataModel, ensuring proper access control."
+      },
+      {
+        "user_query": "Get detailed datasecurity information for the Finance DataModel to audit access permissions",
+        "arguments": {
+          "datamodel_name": "Finance"
+        },
+        "notes": "Use this call to audit and verify datasecurity settings, including share-level visibility, for a specific DataModel, such as Finance, where access control is critical."
+      }
+    ]
+  },
+  {
+    "tool_id": "datamodel.get_model_schema",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "get_model_schema",
+    "description": "Retrieves the schema of a DataModel, including tables and columns.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        }
+      },
+      "required": [
+        "datamodel_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Get the schema of the pysense_databricks DataModel",
+        "arguments": {
+          "datamodel_name": "pysense_databricks"
+        },
+        "notes": "Use this call to retrieve the schema of a specific DataModel, including tables and columns."
+      },
+      {
+        "user_query": "Retrieve the schema for the sample_ec DataModel to plan ETL processes",
+        "arguments": {
+          "datamodel_name": "sample_ec"
+        },
+        "notes": "This call helps in understanding the structure of a DataModel for further data manipulation or analysis tasks."
+      },
+      {
+        "user_query": "Get the schema of the my_datamodel_live DataModel for live data connectivity",
+        "arguments": {
+          "datamodel_name": "my_datamodel_live"
+        },
+        "notes": "Use this to inspect the schema of a live DataModel, useful for real-time data integration and reporting purposes."
+      }
+    ]
+  },
+  {
+    "tool_id": "datamodel.get_row_count",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "get_row_count",
+    "description": "Retrieves the row count for each table in a specific DataModel",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "datamodel_name parameter"
+        }
+      },
+      "required": [
+        "datamodel_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "What is the row count for the pysense_databricks_ec DataModel?",
+        "arguments": {
+          "datamodel_name": "pysense_databricks_ec"
+        },
+        "notes": "Get row count for a specific DataModel to understand data volume"
+      },
+      {
+        "user_query": "How many rows are in the sample_data DataModel?",
+        "arguments": {
+          "datamodel_name": "sample_data"
+        },
+        "notes": "Quickly retrieve row count for a DataModel for data analysis planning"
+      },
+      {
+        "user_query": "Retrieve row count for the production_ec DataModel",
+        "arguments": {
+          "datamodel_name": "production_ec"
+        },
+        "notes": "Use to monitor data growth or changes in a production DataModel"
+      }
+    ]
+  },
+  {
+    "tool_id": "datamodel.get_table_schema",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "get_table_schema",
+    "description": "Retrieves the schema of a table in a specified connection from Data Source.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "connection_name": {
+          "type": "string",
+          "description": "connection_name parameter"
+        },
+        "database_name": {
+          "type": "string",
+          "description": "database_name parameter"
+        },
+        "schema_name": {
+          "type": "string",
+          "description": "schema_name parameter"
+        },
+        "table_name": {
+          "type": "string",
+          "description": "table_name parameter"
+        }
+      },
+      "required": [
+        "connection_name",
+        "database_name",
+        "schema_name",
+        "table_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "datamodel",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Get the schema of the customers table in the sales database from the MySQL connection",
+        "arguments": {
+          "connection_name": "MySQL_Conn",
+          "database_name": "sales",
+          "schema_name": "public",
+          "table_name": "customers"
+        },
+        "notes": "Use this call to retrieve the schema of a specific table in a database for data modeling purposes"
+      },
+      {
+        "user_query": "Retrieve the schema of the orders table in the ecommerce database from the PostgreSQL connection",
+        "arguments": {
+          "connection_name": "PostgreSQL_Conn",
+          "database_name": "ecommerce",
+          "schema_name": "public",
+          "table_name": "orders"
+        },
+        "notes": "This call is useful for understanding the structure of a table before creating a dataset or performing data analysis"
+      },
+      {
+        "user_query": "Get the schema of the products table in the marketing database from the SQL Server connection",
+        "arguments": {
+          "connection_name": "SQL_Server_Conn",
+          "database_name": "marketing",
+          "schema_name": "dbo",
+          "table_name": "products"
+        },
+        "notes": "Use this call to inspect the schema of a table and identify relevant fields for reporting or data visualization"
+      }
+    ]
+  },
+  {
+    "tool_id": "datamodel.setup_datamodel",
+    "module": "datamodel",
+    "class": "DataModel",
+    "method": "setup_datamodel",
+    "description": "Create a DataModel, attach a dataset (connection/database/schema), and add one or more tables in a single operation. Use datamodel_type='extract' (Elasticube/EC) or 'live'. For 'extract', optional per-table build_behavior_config controls replace/append/increment behavior.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_name": {
+          "type": "string",
+          "description": "Target DataModel name to create or update."
+        },
+        "datamodel_type": {
+          "type": "string",
+          "description": "DataModel type. Use 'extract' for Elasticube (aka EC) or 'live' for Live models. Aliases like 'ec'/'elasticube' must be normalized to 'extract'.",
+          "enum": ["extract", "live"],
+          "x-aliases": {
+            "extract": ["ec", "elasticube", "elastic-cube", "cube"],
+            "live": ["real-time", "realtime"]
+          }
+        },
+        "connection_name": {
+          "type": "string",
+          "description": "Existing Sisense connection name to bind for the dataset."
+        },
+        "database_name": {
+          "type": "string",
+          "description": "Source database name (e.g., 'samples', 'fda_food')."
+        },
+        "schema_name": {
+          "type": "string",
+          "description": "Source schema name (e.g., 'nyctaxi', 'tpch')."
+        },
+        "dataset_name": {
+          "type": "string",
+          "description": "Optional dataset name. Defaults to schema_name when omitted."
+        },
+        "tables": {
+          "type": "array",
+          "description": "List of tables to add. For 'live' models, build_behavior_config is ignored. For 'extract' models, set build_behavior_config as needed.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "database_name": {
+                "type": "string",
+                "description": "Optional override of the table's database. Defaults to top-level database_name if omitted."
+              },
+              "schema_name": {
+                "type": "string",
+                "description": "Optional override of the table's schema. Defaults to top-level schema_name if omitted."
+              },
+              "table_name": {
+                "type": "string",
+                "description": "Physical table name to add, or a logical name when using import_query."
+              },
+              "import_query": {
+                "type": "string",
+                "description": "Optional custom SQL to import rows (e.g., SELECT ... LIMIT 10). If provided, supersedes physical table fetch."
+              },
+              "description": {
+                "type": "string",
+                "description": "Optional table description."
+              },
+              "tags": {
+                "type": "array",
+                "description": "Optional list of tags for the table.",
+                "items": { "type": "string" }
+              },
+              "build_behavior_config": {
+                "type": "object",
+                "description": "Only used for 'extract' models. Ignored for 'live'. For 'increment' mode, column_name is required.",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": ["replace", "replace_changes", "append", "increment"],
+                    "description": "Table build behavior for extract models."
+                  },
+                  "column_name": {
+                    "type": "string",
+                    "description": "Required when mode='increment'; ignored otherwise."
+                  }
+                }
+              }
+            },
+            "required": ["table_name"]
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "datamodel_name",
+        "datamodel_type",
+        "connection_name",
+        "database_name",
+        "schema_name",
+        "tables"
+      ]
+    },
+    "mutates": true,
+    "tags": ["datamodel", "write", "setup"],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-16T00:00:00Z",
+    "examples": [
+      {
+        "user_query": "Set up an EC (elasticube) DataModel 'fda_food_ec' on BigQuery fda_food with food_enforcement and enforcement tables.",
+        "arguments": {
+          "datamodel_name": "fda_food_ec",
+          "datamodel_type": "extract",
+          "connection_name": "pysense_bigquery",
+          "database_name": "fda_food",
+          "schema_name": "fda_food",
+          "tables": [
+            { "table_name": "food_enforcement" },
+            { "table_name": "enforcement" }
+          ]
+        },
+        "notes": "Alias 'EC/elasticube' is normalized to datamodel_type='extract'. Simple table adds without custom queries."
+      },
+      {
+        "user_query": "Create a Live DataModel 'nyctaxi_live' from Databricks samples.nyctaxi with trips and vendors; dataset name can default.",
+        "arguments": {
+          "datamodel_name": "nyctaxi_live",
+          "datamodel_type": "live",
+          "connection_name": "pysense_databricks",
+          "database_name": "samples",
+          "schema_name": "nyctaxi",
+          "tables": [
+            { "table_name": "trips" },
+            { "table_name": "vendors" }
+          ]
+        },
+        "notes": "dataset_name omitted so it defaults to schema_name. build_behavior_config ignored for live."
+      },
+      {
+        "user_query": "Set up an extract DataModel 'nyctaxi_ec' with a custom import query and incremental build on trips.",
+        "arguments": {
+          "datamodel_name": "nyctaxi_ec",
+          "datamodel_type": "extract",
+          "connection_name": "pysense_databricks",
+          "database_name": "samples",
+          "schema_name": "nyctaxi",
+          "dataset_name": "nyctaxi_dataset",
+          "tables": [
+            {
+              "table_name": "trips",
+              "import_query": "SELECT * FROM `nyctaxi`.`trips` LIMIT 10",
+              "description": "Trips data sample",
+              "tags": ["trips", "fact"],
+              "build_behavior_config": {
+                "mode": "increment",
+                "column_name": "tpep_pickup_datetime"
+              }
+            },
+            {
+              "table_name": "vendors",
+              "description": "Vendor dimension",
+              "tags": ["vendors", "dimension"],
+              "build_behavior_config": {
+                "mode": "replace"
+              }
+            }
+          ]
+        },
+        "notes": "Shows custom SQL and per-table build behavior for extract models; 'increment' requires column_name."
+      }
+    ]
+  },
+  {
+    "tool_id": "dashboard.add_dashboard_script",
+    "module": "dashboard",
+    "class": "Dashboard",
+    "method": "add_dashboard_script",
+    "description": "Adds or overwrites a script to a dashboard, temporarily changing ownership if required.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "dashboard_id": {
+          "type": "string",
+          "description": "dashboard_id parameter"
+        },
+        "script": {
+          "type": "string",
+          "description": "script parameter"
+        },
+        "executing_user": {
+          "type": "string",
+          "description": "executing_user parameter"
+        }
+      },
+      "required": [
+        "dashboard_id",
+        "script"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "dashboard",
+      "dashboards",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Add a script to the main dashboard to customize the layout",
+        "arguments": {
+          "dashboard_id": "65d62c9wregfhg0e33bc64e8",
+          "script": "dashboard.on('widgetready', function(d) { $('.dashboard-layout-column').css('background-color', '#f0f0f0'); })",
+          "executing_user": "admin@sisense.com"
+        },
+        "notes": "Use this call to add custom JavaScript code to a dashboard for UI customization"
+      },
+      {
+        "user_query": "Override the existing script on the sales dashboard with a new one",
+        "arguments": {
+          "dashboard_id": "67dc928ae72ce30033bc6680",
+          "script": "dashboard.on('widgetready', function(d) { $('.dashboard-layout').css('background-color', '#ffffff'); })",
+          "executing_user": "sisensepy@sisense.com"
+        },
+        "notes": "Use this call to update an existing script on a dashboard, changing its behavior"
+      },
+      {
+        "user_query": "Add a script to the marketing dashboard to remove horizontal dividers",
+        "arguments": {
+          "dashboard_id": "6823c49365acb80033041c88",
+          "script": "dashboard.on('widgetready', function(d) { $('.dashboard-layout-cell-horizontal-divider').remove(); })",
+          "executing_user": "marketing@sisense.com"
+        },
+        "notes": "Use this call to add custom functionality to a specific dashboard, enhancing user experience"
+      }
+    ]
+  },
+  {
+    "tool_id": "dashboard.add_dashboard_shares",
+    "module": "dashboard",
+    "class": "Dashboard",
+    "method": "add_dashboard_shares",
+    "description": "Adds or updates shares for a dashboard, specifying users and groups along with their access rules.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "dashboard_id": {
+          "type": "string",
+          "description": "dashboard_id parameter"
+        },
+        "shares": {
+          "type": "string",
+          "description": "shares parameter"
+        }
+      },
+      "required": [
+        "dashboard_id",
+        "shares"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "dashboard",
+      "dashboards",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Share the Sales Overview dashboard with the Sales team and allow them to edit it",
+        "arguments": {
+          "dashboard_id": "65d62c9wregfhg0e33bc64e8",
+          "shares": "[{\"name\": \"sales_team\", \"type\": \"group\", \"rule\": \"edit\"}]"
+        },
+        "notes": "Use this call to grant edit permissions to a group for a specific dashboard"
+      },
+      {
+        "user_query": "Give view-only access to the Marketing dashboard for the marketing@example.com user",
+        "arguments": {
+          "dashboard_id": "67dc928ae72ce30033bc6680",
+          "shares": "[{\"name\": \"marketing@example.com\", \"type\": \"user\", \"rule\": \"view\"}]"
+        },
+        "notes": "Use this call to grant view-only permissions to a user for a specific dashboard"
+      },
+      {
+        "user_query": "Update shares for the Executive Summary dashboard to include both view and edit permissions for different users and groups",
+        "arguments": {
+          "dashboard_id": "6823c49365acb80033041c88",
+          "shares": "[{\"name\": \"john.doe@example.com\", \"type\": \"user\", \"rule\": \"edit\"}, {\"name\": \"viewer@example.com\", \"type\": \"user\", \"rule\": \"view\"}, {\"name\": \"executives\", \"type\": \"group\", \"rule\": \"view\"}]"
+        },
+        "notes": "Use this call to update existing shares or add new ones with different permission levels for various users and groups"
+      }
+    ]
+  },
+  {
+    "tool_id": "dashboard.add_widget_script",
+    "module": "dashboard",
+    "class": "Dashboard",
+    "method": "add_widget_script",
+    "description": "Adds or overwrites a script for a specific widget within a dashboard.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "dashboard_id": {
+          "type": "string",
+          "description": "dashboard_id parameter"
+        },
+        "widget_id": {
+          "type": "string",
+          "description": "widget_id parameter"
+        },
+        "script": {
+          "type": "string",
+          "description": "script parameter"
+        },
+        "executing_user": {
+          "type": "string",
+          "description": "executing_user parameter"
+        }
+      },
+      "required": [
+        "dashboard_id",
+        "widget_id",
+        "script"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "dashboard",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Add a script to the sales dashboard widget to customize its appearance",
+        "arguments": {
+          "dashboard_id": "65d62c9wregfhg0e33bc64e8",
+          "widget_id": "67dc929be72ce30033bc6682",
+          "script": "widget.on('beforeviewloaded', function(se, ev){ var legendAlign = 'left'; })",
+          "executing_user": "sisensepy@sisense.com"
+        },
+        "notes": "Use this call to add custom scripts to specific widgets in a dashboard for UI customization"
+      },
+      {
+        "user_query": "Override the existing script for the marketing dashboard widget with a new one",
+        "arguments": {
+          "dashboard_id": "6823c49365acb80033041c88",
+          "widget_id": "67dc928ae72ce30033bc6680",
+          "script": "widget.on('beforeviewloaded', function(se, ev){ var legendAlign = 'right'; })",
+          "executing_user": "admin@sisense.com"
+        },
+        "notes": "Use this call to update or replace existing scripts for widgets in a dashboard"
+      },
+      {
+        "user_query": "Add an interactive script to the customer dashboard widget for enhanced user experience",
+        "arguments": {
+          "dashboard_id": "pysense_databricks",
+          "widget_id": "67dc929be72ce30033bc6682",
+          "script": "widget.on('beforeviewloaded', function(se, ev){ var interactiveChart = true; })",
+          "executing_user": "sisensepy@sisense.com"
+        },
+        "notes": "Use this call to add interactive scripts to widgets in a dashboard for improved user engagement"
+      }
+    ]
+  },
+  {
+    "tool_id": "dashboard.get_all_dashboards",
+    "module": "dashboard",
+    "class": "Dashboard",
+    "method": "get_all_dashboards",
+    "description": "Retrieves all dashboards from the Sisense server.",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    },
+    "mutates": false,
+    "tags": [
+      "dashboard",
+      "dashboards",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Get all dashboards in the system to review their performance",
+        "arguments": {},
+        "notes": "Use this call to retrieve a list of all dashboards in the system for auditing or monitoring purposes"
+      },
+      {
+        "user_query": "Retrieve all dashboards to identify unused ones",
+        "arguments": {},
+        "notes": "This call helps administrators identify unused or redundant dashboards for cleanup and optimization"
+      },
+      {
+        "user_query": "Fetch all dashboards for a system-wide dashboard inventory",
+        "arguments": {},
+        "notes": "Use this call to create a comprehensive inventory of all dashboards, useful for documentation and compliance"
+      }
+    ]
+  },
+  {
+    "tool_id": "dashboard.get_dashboard_by_id",
+    "module": "dashboard",
+    "class": "Dashboard",
+    "method": "get_dashboard_by_id",
+    "description": "Retrieves a specific dashboard by its ID.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "dashboard_id": {
+          "type": "string",
+          "description": "dashboard_id parameter"
+        }
+      },
+      "required": [
+        "dashboard_id"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "dashboard",
+      "dashboards",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Get the dashboard with ID 65d62c9wregfhg0e33bc64e8 to analyze its widgets and filters",
+        "arguments": {
+          "dashboard_id": "65d62c9wregfhg0e33bc64e8"
+        },
+        "notes": "Use this call to retrieve a specific dashboard by its ID for further analysis or customization"
+      },
+      {
+        "user_query": "Fetch the main dashboard to display its key performance indicators",
+        "arguments": {
+          "dashboard_id": "main_dashboard_id"
+        },
+        "notes": "Use this call to retrieve a specific dashboard by its ID to display its key performance indicators"
+      },
+      {
+        "user_query": "Retrieve the sales dashboard to update its data source and filters",
+        "arguments": {
+          "dashboard_id": "sales_dashboard_id"
+        },
+        "notes": "Use this call to retrieve a specific dashboard by its ID to update its data source, filters, or other settings"
+      }
+    ]
+  },
+  {
+    "tool_id": "dashboard.get_dashboard_by_name",
+    "module": "dashboard",
+    "class": "Dashboard",
+    "method": "get_dashboard_by_name",
+    "description": "Retrieves a specific dashboard by its name.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "dashboard_name": {
+          "type": "string",
+          "description": "dashboard_name parameter"
+        }
+      },
+      "required": [
+        "dashboard_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "dashboard",
+      "dashboards",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Get the dashboard named 'Sales Overview'",
+        "arguments": {
+          "dashboard_name": "Sales Overview"
+        },
+        "notes": "Use this call to retrieve a specific dashboard by its name for further analysis or automation"
+      },
+      {
+        "user_query": "Fetch the 'Marketing Performance' dashboard to analyze its widgets and data",
+        "arguments": {
+          "dashboard_name": "Marketing Performance"
+        },
+        "notes": "This call is useful when you need to access a specific dashboard's details, such as its widgets, filters, or data sources"
+      },
+      {
+        "user_query": "Retrieve the 'Executive Summary' dashboard for reporting purposes",
+        "arguments": {
+          "dashboard_name": "Executive Summary"
+        },
+        "notes": "Use this call to get a dashboard by its name when generating reports or performing administrative tasks"
+      }
+    ]
+  },
+  {
+    "tool_id": "dashboard.get_dashboard_columns",
+    "module": "dashboard",
+    "class": "Dashboard",
+    "method": "get_dashboard_columns",
+    "description": "Retrieves columns from a specific dashboard, including both widget and filter-level columns.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "dashboard_name": {
+          "type": "string",
+          "description": "dashboard_name parameter"
+        }
+      },
+      "required": [
+        "dashboard_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "dashboard",
+      "dashboards",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "What columns are available in the Sales Overview dashboard?",
+        "arguments": {
+          "dashboard_name": "Sales Overview"
+        },
+        "notes": "Use this call to retrieve all columns from a specific dashboard for further analysis or reporting"
+      },
+      {
+        "user_query": "Get the columns for the Marketing Performance dashboard to create a custom report",
+        "arguments": {
+          "dashboard_name": "Marketing Performance"
+        },
+        "notes": "This call helps in identifying the available columns for a dashboard, which can be used to create custom reports or data visualizations"
+      },
+      {
+        "user_query": "Retrieve columns from the Executive Summary dashboard for data integration purposes",
+        "arguments": {
+          "dashboard_name": "Executive Summary"
+        },
+        "notes": "Use this call when integrating data from a Sisense dashboard into other systems or applications, requiring knowledge of the available columns"
+      }
+    ]
+  },
+  {
+    "tool_id": "dashboard.get_dashboard_share",
+    "module": "dashboard",
+    "class": "Dashboard",
+    "method": "get_dashboard_share",
+    "description": "Retrieves share details (users and groups) for a specific dashboard by title.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "dashboard_name": {
+          "type": "string",
+          "description": "dashboard_name parameter"
+        }
+      },
+      "required": [
+        "dashboard_name"
+      ]
+    },
+    "mutates": false,
+    "tags": [
+      "dashboard",
+      "dashboards",
+      "read"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "What are the sharing details for the Sales Overview dashboard?",
+        "arguments": {
+          "dashboard_name": "Sales Overview"
+        },
+        "notes": "Use this call to retrieve share details for a specific dashboard by its title."
+      },
+      {
+        "user_query": "Get the users and groups that have access to the Marketing Dashboard",
+        "arguments": {
+          "dashboard_name": "Marketing Dashboard"
+        },
+        "notes": "This call is useful for auditing or managing dashboard access and permissions."
+      },
+      {
+        "user_query": "Who has access to the Executive Summary dashboard?",
+        "arguments": {
+          "dashboard_name": "Executive Summary"
+        },
+        "notes": "Use this call to identify all users and groups with view or edit permissions for a specific dashboard."
+      }
+    ]
+  },
+  {
+    "tool_id": "migration.migrate_all_dashboards",
+    "module": "migration",
+    "class": "Migration",
+    "method": "migrate_all_dashboards",
+    "description": "Migrates all dashboards from the source to the target environment in batches.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "Strategy to handle existing dashboards in the target environment.",
+          "enum": ["skip", "overwrite", "duplicate"]
+        },
+        "republish": {
+          "type": "boolean",
+          "description": "Whether to republish dashboards after migration."
+        },
+        "migrate_share": {
+          "type": "boolean",
+          "description": "Whether to migrate shares for the dashboards."
+        },
+        "change_ownership": {
+          "type": "boolean",
+          "description": "Whether to change ownership of dashboards (usually requires migrating shares)."
+        },
+        "batch_size": {
+          "type": "integer",
+          "description": "Number of dashboards to process per batch."
+        },
+        "sleep_time": {
+          "type": "integer",
+          "description": "Seconds to wait between batches."
+        }
+      },
+      "required": []
+    },
+    "mutates": true,
+    "tags": [
+      "migration",
+      "dashboards",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Migrate all dashboards from the dev environment to the prod environment in batches of 20, waiting 5 seconds between batches, and republish them",
+        "arguments": {
+          "action": "skip",
+          "republish": true,
+          "migrate_share": true,
+          "change_ownership": true,
+          "batch_size": 20,
+          "sleep_time": 5
+        },
+        "notes": "Use this call when you want to migrate all dashboards from one environment to another, with minimal downtime and automatic republishing."
+      },
+      {
+        "user_query": "Migrate all dashboards in batches of 50, overwriting any existing dashboards in the target environment, and changing ownership",
+        "arguments": {
+          "action": "overwrite",
+          "republish": false,
+          "migrate_share": true,
+          "change_ownership": true,
+          "batch_size": 50,
+          "sleep_time": 10
+        },
+        "notes": "Use this call when you want to migrate all dashboards and overwrite any existing ones in the target environment, with a larger batch size for faster migration."
+      },
+      {
+        "user_query": "Migrate all dashboards from the staging environment to the prod environment in batches of 10, waiting 2 seconds between batches, without republishing or changing ownership",
+        "arguments": {
+          "action": "skip",
+          "republish": false,
+          "migrate_share": false,
+          "change_ownership": false,
+          "batch_size": 10,
+          "sleep_time": 2
+        },
+        "notes": "Use this call when you want to migrate all dashboards with minimal impact on the target environment and no automatic republishing."
+      }
+    ]
+  },
+  {
+    "tool_id": "migration.migrate_all_datamodels",
+    "module": "migration",
+    "class": "Migration",
+    "method": "migrate_all_datamodels",
+    "description": "Migrates all data models from the source environment to the target environment in batches.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "dependencies": {
+          "type": "array",
+          "description": "Dependencies to include for each data model. If omitted, all dependencies are included by default.",
+          "items": {
+            "type": "string",
+            "enum": ["dataSecurity", "formulas", "hierarchies", "perspectives"]
+          }
+        },
+        "shares": {
+          "type": "boolean",
+          "description": "Whether to also migrate data model shares."
+        },
+        "batch_size": {
+          "type": "integer",
+          "description": "Number of data models to process per batch."
+        },
+        "sleep_time": {
+          "type": "integer",
+          "description": "Seconds to wait between batches."
+        },
+        "action": {
+          "type": "string",
+          "description": "Strategy to handle existing data models in the target environment.",
+          "enum": ["overwrite", "duplicate"]
+        }
+      },
+      "required": []
+    },
+    "mutates": true,
+    "tags": [
+      "migration",
+      "datamodel",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Migrate all data models from the source environment to the target environment in batches of 5, waiting 5 seconds between batches, and overwriting any existing models",
+        "arguments": {
+          "dependencies": ["dataSecurity", "formulas", "hierarchies", "perspectives"],
+          "shares": true,
+          "batch_size": 5,
+          "sleep_time": 5,
+          "action": "overwrite"
+        },
+        "notes": "Use this call when you want to migrate all data models and all of their dependencies and shares, overwriting any existing models in the target environment."
+      },
+      {
+        "user_query": "Migrate all data models with their shares and formulas from the source environment to the target environment in batches of 10, waiting 10 seconds between batches",
+        "arguments": {
+          "dependencies": ["formulas"],
+          "shares": true,
+          "batch_size": 10,
+          "sleep_time": 10,
+          "action": "duplicate"
+        },
+        "notes": "Use this call when you want to migrate all data models with their formulas and shares, creating duplicate models in the target environment."
+      },
+      {
+        "user_query": "Migrate all data models from the source environment to the target environment in batches of 20, waiting 15 seconds between batches, and migrating data security dependencies",
+        "arguments": {
+          "dependencies": ["dataSecurity"],
+          "shares": false,
+          "batch_size": 20,
+          "sleep_time": 15,
+          "action": "overwrite"
+        },
+        "notes": "Use this call when you want to migrate all data models with only their data security dependencies, overwriting any existing models in the target environment."
+      }
+    ]
+  },
+  {
+    "tool_id": "migration.migrate_all_groups",
+    "module": "migration",
+    "class": "Migration",
+    "method": "migrate_all_groups",
+    "description": "Migrates all groups from the source environment to the target environment using the bulk endpoint.",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    },
+    "mutates": true,
+    "tags": [
+      "migration",
+      "groups",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Migrate all groups from the source environment to the target environment",
+        "arguments": {},
+        "notes": "Use this call when you want to migrate all groups from one environment to another without specifying particular groups."
+      },
+      {
+        "user_query": "Replicate all user groups from dev to prod",
+        "arguments": {},
+        "notes": "Useful for synchronizing groups between environments, such as from development to production."
+      },
+      {
+        "user_query": "Initialize the target environment with all groups from the source",
+        "arguments": {},
+        "notes": "Use this call to set up a new target environment by migrating all groups from an existing source environment."
+      }
+    ]
+  },
+  {
+    "tool_id": "migration.migrate_all_users",
+    "module": "migration",
+    "class": "Migration",
+    "method": "migrate_all_users",
+    "description": "Migrates all users from the source environment to the target environment using the bulk endpoint.",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    },
+    "mutates": true,
+    "tags": [
+      "migration",
+      "users",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Migrate all users from the source environment to the target environment",
+        "arguments": {},
+        "notes": "Use this call when you want to migrate all users from one environment to another without specifying particular users."
+      },
+      {
+        "user_query": "Replicate the user base from our development environment to our production environment",
+        "arguments": {},
+        "notes": "Useful for ensuring that all users in a development environment are also present in the production environment."
+      },
+      {
+        "user_query": "Sync all users from the source to the target system",
+        "arguments": {},
+        "notes": "Use this call for synchronizing the user base between two Sisense environments, such as from staging to live."
+      }
+    ]
+  },
+  {
+    "tool_id": "migration.migrate_dashboard_shares",
+    "module": "migration",
+    "class": "Migration",
+    "method": "migrate_dashboard_shares",
+    "description": "Migrates shares for specific dashboards from the source to the target environment.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "source_dashboard_ids": {
+          "type": "array",
+          "description": "List of source dashboard IDs whose shares should be migrated.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "target_dashboard_ids": {
+          "type": "array",
+          "description": "List of target dashboard IDs that correspond to the source dashboards.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "change_ownership": {
+          "type": "boolean",
+          "description": "Whether to change ownership of the dashboards on the target environment."
+        }
+      },
+      "required": [
+        "source_dashboard_ids",
+        "target_dashboard_ids"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "migration",
+      "dashboards",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Migrate shares for dashboards with IDs 123 and 456 from dev to prod",
+        "arguments": {
+          "source_dashboard_ids": ["123", "456"],
+          "target_dashboard_ids": ["789", "1011"],
+          "change_ownership": true
+        },
+        "notes": "Use when migrating dashboard shares between environments and mapping source dashboards to different target dashboard IDs."
+      },
+      {
+        "user_query": "Transfer ownership of dashboard shares for IDs 111 and 222",
+        "arguments": {
+          "source_dashboard_ids": ["111", "222"],
+          "target_dashboard_ids": ["111", "222"],
+          "change_ownership": true
+        },
+        "notes": "Use when changing ownership of existing dashboards while keeping the same IDs in source and target."
+      },
+      {
+        "user_query": "Migrate shares for dashboards with IDs 333 and 444 without changing ownership",
+        "arguments": {
+          "source_dashboard_ids": ["333", "444"],
+          "target_dashboard_ids": ["333", "444"],
+          "change_ownership": false
+        },
+        "notes": "Use when migrating dashboard shares but retaining the existing owners in the target environment."
+      }
+    ]
+  },
+  {
+    "tool_id": "migration.migrate_dashboards",
+    "module": "migration",
+    "class": "Migration",
+    "method": "migrate_dashboards",
+    "description": "Migrates specific dashboards from the source to the target environment using the bulk endpoint.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "dashboard_ids": {
+          "type": "array",
+          "description": "List of dashboard IDs to migrate.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dashboard_names": {
+          "type": "array",
+          "description": "List of dashboard titles to migrate.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "action": {
+          "type": "string",
+          "description": "Strategy to handle existing dashboards in the target environment.",
+          "enum": ["skip", "overwrite", "duplicate"]
+        },
+        "republish": {
+          "type": "boolean",
+          "description": "Whether to republish dashboards after migration."
+        },
+        "migrate_share": {
+          "type": "boolean",
+          "description": "Whether to migrate dashboard shares."
+        },
+        "change_ownership": {
+          "type": "boolean",
+          "description": "Whether to change ownership of dashboards (usually requires migrating shares)."
+        }
+      },
+      "required": []
+    },
+    "mutates": true,
+    "tags": [
+      "migration",
+      "dashboards",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Migrate the 'Sales' and 'Marketing' dashboards from the source environment to the target environment, overwriting any existing dashboards with the same name",
+        "arguments": {
+          "dashboard_names": ["Sales", "Marketing"],
+          "action": "overwrite",
+          "republish": true,
+          "migrate_share": true,
+          "change_ownership": true
+        },
+        "notes": "Use this call when you need to migrate specific dashboards and update their shares and ownership in the target environment."
+      },
+      {
+        "user_query": "Migrate the dashboards with IDs '12345' and '67890' from the source environment to the target environment, skipping any existing dashboards with the same ID",
+        "arguments": {
+          "dashboard_ids": ["12345", "67890"],
+          "action": "skip",
+          "republish": false,
+          "migrate_share": false,
+          "change_ownership": false
+        },
+        "notes": "Use this call when you need to migrate specific dashboards without overwriting existing ones in the target environment."
+      },
+      {
+        "user_query": "Migrate the 'Executive Summary' dashboard from the source environment to the target environment, duplicating it if it already exists, and migrate its shares",
+        "arguments": {
+          "dashboard_names": ["Executive Summary"],
+          "action": "duplicate",
+          "republish": true,
+          "migrate_share": true,
+          "change_ownership": true
+        },
+        "notes": "Use this call when you need to migrate a dashboard and create a duplicate if it already exists in the target environment, while also migrating its shares."
+      }
+    ]
+  },
+  {
+    "tool_id": "migration.migrate_datamodels",
+    "module": "migration",
+    "class": "Migration",
+    "method": "migrate_datamodels",
+    "description": "Migrates specific data models from the source environment to the target environment.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "datamodel_ids": {
+          "type": "array",
+          "description": "List of data model IDs to migrate.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "datamodel_names": {
+          "type": "array",
+          "description": "List of data model titles to migrate.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "provider_connection_map": {
+          "type": "object",
+          "description": "Mapping of provider name to connection ID for the target environment. Keys are provider names, values are connection IDs.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "dependencies": {
+          "type": "array",
+          "description": "Dependencies to include for each data model. If omitted, all dependencies are included by default.",
+          "items": {
+            "type": "string",
+            "enum": ["dataSecurity", "formulas", "hierarchies", "perspectives"]
+          }
+        },
+        "shares": {
+          "type": "boolean",
+          "description": "Whether to also migrate the data model's shares."
+        },
+        "action": {
+          "type": "string",
+          "description": "Strategy to handle existing data models in the target environment.",
+          "enum": ["overwrite", "duplicate"]
+        },
+        "new_title": {
+          "type": "string",
+          "description": "New name for the duplicated data model (used only when action='duplicate')."
+        }
+      },
+      "required": []
+    },
+    "mutates": true,
+    "tags": [
+      "migration",
+      "datamodel",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Migrate the 'Sales' and 'Marketing' data models from the source environment to the target environment, including their dependencies and shares",
+        "arguments": {
+          "datamodel_names": ["Sales", "Marketing"],
+          "dependencies": ["dataSecurity", "formulas", "hierarchies", "perspectives"],
+          "shares": true
+        },
+        "notes": "Use this call to migrate specific data models along with all of their dependencies and shares."
+      },
+      {
+        "user_query": "Migrate the data model with ID 'dddfac9f-86e6-4a9a-af28-f52106dcc55c' from the source environment to the target environment, overwriting any existing model with the same ID, including data security and formulas",
+        "arguments": {
+          "datamodel_ids": ["dddfac9f-86e6-4a9a-af28-f52106dcc55c"],
+          "action": "overwrite",
+          "dependencies": ["dataSecurity", "formulas"]
+        },
+        "notes": "Use this call to migrate a specific data model and overwrite any existing model in the target environment."
+      },
+      {
+        "user_query": "Migrate the 'Customer' data model from the source environment to the target environment, duplicating it with a new name 'Customer Copy' and including its formulas and perspectives dependencies",
+        "arguments": {
+          "datamodel_names": ["Customer"],
+          "action": "duplicate",
+          "new_title": "Customer Copy",
+          "dependencies": ["formulas", "perspectives"]
+        },
+        "notes": "Use this call to migrate a data model and create a duplicate in the target environment with a new name and selected dependencies."
+      }
+    ]
+  },
+  {
+    "tool_id": "migration.migrate_groups",
+    "module": "migration",
+    "class": "Migration",
+    "method": "migrate_groups",
+    "description": "Migrates specific groups from the source environment to the target environment using the bulk endpoint.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "group_name_list": {
+          "type": "array",
+          "description": "List of group names to migrate.",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "group_name_list"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "migration",
+      "groups",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Migrate the groups 'Admins' and 'Developers' from the source environment to the target environment",
+        "arguments": {
+          "group_name_list": ["Admins", "Developers"]
+        },
+        "notes": "Use this call to migrate specific groups, useful when setting up a new environment or syncing groups between environments."
+      },
+      {
+        "user_query": "Migrate the group 'Customers' from the source environment to the target environment",
+        "arguments": {
+          "group_name_list": ["Customers"]
+        },
+        "notes": "Use this call to migrate a single group, for example when a new group is created in the source environment and needs to be synced with the target environment."
+      },
+      {
+        "user_query": "Migrate multiple groups 'Sales', 'Marketing', and 'IT' from the source environment to the target environment",
+        "arguments": {
+          "group_name_list": ["Sales", "Marketing", "IT"]
+        },
+        "notes": "Use this call to migrate multiple groups at once, useful when setting up a new environment or syncing multiple groups between environments."
+      }
+    ]
+  },
+  {
+    "tool_id": "migration.migrate_users",
+    "module": "migration",
+    "class": "Migration",
+    "method": "migrate_users",
+    "description": "Migrates specific users from the source environment to the target environment.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "user_name_list": {
+          "type": "array",
+          "description": "List of user email addresses to migrate.",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "user_name_list"
+      ]
+    },
+    "mutates": true,
+    "tags": [
+      "migration",
+      "users",
+      "write"
+    ],
+    "sdk_version": "0.1.3",
+    "updated_at": "2025-11-10T21:21:43Z",
+    "examples": [
+      {
+        "user_query": "Migrate the users john.doe and jane.smith from the source environment to the target environment",
+        "arguments": {
+          "user_name_list": ["john.doe@sisense.com", "jane.smith@sisense.com"]
+        },
+        "notes": "Use this call to migrate specific users from one environment to another."
+      },
+      {
+        "user_query": "Migrate all users in the IT department from the source environment to the target environment",
+        "arguments": {
+          "user_name_list": [
+            "john.doe@sisense.com",
+            "jane.smith@sisense.com",
+            "bob.johnson@sisense.com"
+          ]
+        },
+        "notes": "Use this call to migrate a list of users from one environment to another, for example when onboarding a new team."
+      },
+      {
+        "user_query": "Migrate the user admin from the source environment to the target environment",
+        "arguments": {
+          "user_name_list": ["admin@sisense.com"]
+        },
+        "notes": "Use this call to migrate a single user, such as an administrator, from one environment to another."
+      }
+    ]
+  }
+]

@@ -1,0 +1,6 @@
+mcp
+requests
+python-dotenv
+pysisense
+pandas
+streamlit
