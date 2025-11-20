@@ -35,3 +35,6 @@ old_*.json
 
 # Local docs clone (pysisense repo)
 docs_src/
+
+#extra files
+sisense_mcp_flow.md
