@@ -26,7 +26,7 @@ logger = logging.getLogger("client")
 
 level = getattr(logging, log_level.upper(), logging.INFO)
 logger.setLevel(level)
-logger.propagate = False  # don't bubble up to root
+logger.propagate = False
 
 if not any(isinstance(h, logging.FileHandler) for h in logger.handlers):
     fh = logging.FileHandler(LOG_DIR / "client.log", encoding="utf-8")
@@ -54,8 +54,6 @@ def _require(var: str) -> str:
 ALLOW_MUTATING_TOOLS = True
 
 # If True, mutating tool calls require an explicit approval from the UI.
-# This client will *not* prompt in the terminal; it will return a
-# pending_confirmation payload for the UI to render approval.
 REQUIRE_MUTATION_CONFIRM = True
 
 # Separate audit logger for mutations
@@ -73,7 +71,7 @@ if not any(isinstance(h, logging.FileHandler) for h in audit_logger.handlers):
 # -----------------------------------------------------------------------------
 # LLM provider config (azure | databricks)
 # -----------------------------------------------------------------------------
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "databricks").lower()  # default to DBrx
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "databricks").lower()
 logger.info("Using LLM_PROVIDER=%s", LLM_PROVIDER)
 
 if LLM_PROVIDER == "azure":
@@ -189,8 +187,8 @@ def load_tools_for_llm() -> List[Dict[str, Any]]:
             skipped_mutating,
         )
 
-    # Optional: cap at 60 for Azure, 32 for Databricks
-    MAX_TOOLS = 60
+    # Optional: cap at 80 for Azure, 32 for Databricks
+    MAX_TOOLS = 80
     if len(tools) > MAX_TOOLS:
         logger.info(
             "Truncating tools for LLM from %d to %d. "
@@ -543,7 +541,7 @@ async def call_llm_with_tools(
                     name,
                     json.dumps(args, ensure_ascii=False),
                 )
-                # Return immediately; the UI should render the confirm buttons
+                # Return immediately; the UI render the confirm buttons
                 return (
                     "This action requires confirmation in the UI before proceeding."
                 )

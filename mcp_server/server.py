@@ -25,7 +25,7 @@ logger = logging.getLogger("mcp_server")
 
 level = getattr(logging, log_level.upper(), logging.INFO)
 logger.setLevel(level)
-logger.propagate = False  # don't bubble to root
+logger.propagate = False
 
 # ensure a single FileHandler to logs/mcp_server.log
 if not any(isinstance(h, logging.FileHandler) for h in logger.handlers):
@@ -299,7 +299,6 @@ def _build_sisense_client(tenant: Dict[str, Any]) -> SisenseClient:
         tenant.get("ssl", True),
     )
 
-    # from_connection is the new SDK factory for inline connections
     return SisenseClient.from_connection(
         domain=tenant["domain"],
         token=tenant["token"],

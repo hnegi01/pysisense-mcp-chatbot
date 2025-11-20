@@ -410,7 +410,7 @@ def main() -> None:
         # Apply schema enrichment BEFORE calling the LLM so examples align
         tool = apply_schema_rules(tool)
 
-        # Reuse existing entry with examples if available (resume support)
+        # Reuse existing entry with examples
         existing = existing_by_id.get(tool_id)
         if existing and existing.get("examples"):
             logger.info(

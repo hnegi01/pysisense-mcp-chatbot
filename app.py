@@ -15,7 +15,7 @@ from chatbot.mcp_client import McpClient
 
 
 # ------------------------------
-# Logging setup (file-only, simple)
+# Logging setup
 # ------------------------------
 log_level = "debug"  # <- change to "info", "warning", etc. as you like
 
@@ -488,7 +488,7 @@ if mode == MODE_CHAT:
         with st.chat_message("user"):
             st.markdown(user_input)
 
-        # Get assistant reply (may set a pending confirmation or a final result)
+        # Get assistant reply
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 try:
@@ -605,7 +605,7 @@ if mode == MODE_CHAT:
 
 
 # ======================================================================
-# MODE 2: MIGRATE BETWEEN DEPLOYMENTS (FULLY WIRED)
+# MODE 2: MIGRATE BETWEEN DEPLOYMENTS
 # ======================================================================
 if mode == MODE_MIGRATION:
     MIG_SRC_KEY = "migration_source_config"

@@ -4,13 +4,16 @@ set -euo pipefail
 # ------------------------------------------------------------
 # Config
 # ------------------------------------------------------------
-# Hard-coded PySisense GitHub URL so anyone can use this script.
+# PySisense repo URL
 PYSISENSE_REPO_URL="https://github.com/sisense/pysisense"
 
-# Always use main
+# Target branch to pull from
 BRANCH="main"
 
-# Resolve repo root as the directory where this script lives
+# ------------------------------------------------------------
+# Script start
+# ------------------------------------------------------------
+# Get the directory of this script
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "=== Refreshing PySisense tool registry ==="
@@ -61,7 +64,7 @@ git status -sb || true
 echo
 
 git fetch origin
-# Try to checkout main if we're not on it
+# Try to checkout main
 if [[ "${current_branch}" != "${BRANCH}" ]]; then
   echo "  Checking out branch ${BRANCH}..."
   git checkout "${BRANCH}" || {

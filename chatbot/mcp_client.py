@@ -109,7 +109,7 @@ class McpClient:
 
         # Chat / standard mode tenant
         self._tenant_config: Dict[str, Any] = tenant_config or {}
-        # Migration mode source + target (not used yet by app, but ready)
+        # Migration mode source + target
         self._migration_config: Dict[str, Any] = migration_config or {}
 
         if self._tenant_config:
@@ -215,7 +215,7 @@ class McpClient:
           target_domain, target_token, target_ssl
         """
         if not self._migration_config:
-            # Nothing configured, return as-is. Server will error if required.
+            # Nothing configured, return as-is.
             return arguments
 
         merged = dict(arguments)
