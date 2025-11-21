@@ -146,7 +146,7 @@ def render_tool_result(tr: dict):
 # ------------------------------
 # Streamlit UI
 # ------------------------------
-st.set_page_config(page_title="Sisense MCP Assistant", page_icon=None)
+st.set_page_config(page_title="FES Control Center", page_icon=None)
 
 st.markdown(
     """
@@ -167,7 +167,7 @@ st.markdown(
 
 st.title("FES Control Center")
 st.markdown(
-    "<p style='font-size: 0.95rem; opacity: 0.85;'>MCP and PySisense powered assistant for Sisense Field Engineering</p>",
+    "<p style='font-size: 0.95rem; opacity: 0.85;'>Powered by the FES Agent (MCP + PySisense)</p>",
     unsafe_allow_html=True,
 )
 
