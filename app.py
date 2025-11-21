@@ -132,7 +132,7 @@ def render_tool_result(tr: dict):
                     df[col] = df[col].astype(str)
 
             st.markdown("**Result**")
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, width="stretch")
         else:
             st.markdown("**Result (JSON)**")
             st.code(json.dumps(data, indent=2), language="json")
@@ -148,15 +148,18 @@ def render_tool_result(tr: dict):
 # ------------------------------
 st.set_page_config(page_title="Sisense MCP Assistant", page_icon=None)
 
-# Making the left sidebar a bit wider
 st.markdown(
     """
     <style>
-        /* Sidebar width */
-        [data-testid="stSidebar"] {
-            min-width: 340px;
-            max-width: 340px;
-        }
+    /* Hide the sidebar collapse/expand button */
+    button[data-testid="stBaseButton-headerNoPadding"] {
+        display: none !important;
+    }
+    /* Sidebar width */
+    [data-testid="stSidebar"] {
+        min-width: 360px;
+        max-width: 360px;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -168,6 +171,27 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# ------------------------------
+# Global Privacy & Controls
+# ------------------------------
+with st.sidebar:
+    st.markdown("""
+    <div style="font-weight: 700; font-size: 1.1rem; margin-top: 10px;">
+        <span style="color:#FF0000; margin-right:12px;">🔒</span> Privacy & Controls
+    </div>
+    """, unsafe_allow_html=True)
+
+    allow = st.checkbox(
+        "Allow summarization (Sisense data will be sent to the LLM)",
+        key="allow_summarization",
+        help=(
+            "When enabled, Sisense data will be sent to the LLM provider for summarization. "
+            "This may include sensitive information, so enable only if you trust the LLM provider."
+        ),
+    )
+
+# Push the toggle into the client on every rerun
+chat_client.ALLOW_SUMMARIZATION = allow
 
 # ------------------------------
 # Mode selection: Chat vs Migration
@@ -291,9 +315,8 @@ if mode == MODE_CHAT:
 
     # If chat tenant is not set, show the connection form and stop before chat UI
     if st.session_state[CHAT_TENANT_KEY] is None:
-        # Sidebar for Chat mode (no tenant yet)
         with st.sidebar:
-            st.subheader("Status")
+            st.subheader("Status:")
             st.write(f"Chat tools available to LLM: **{len(chat_tools)}**")
             st.markdown("**Mode:** Chat with deployment")
             st.markdown("---")
@@ -301,10 +324,10 @@ if mode == MODE_CHAT:
                 "Connect your Sisense deployment to start chatting. "
                 "Switch to 'Migrate between deployments' mode to migrate assets between environments."
             )
-
         render_chat_tenant_form()
         st.stop()
 
+    # We now know tenant is configured
     chat_tenant_config = st.session_state[CHAT_TENANT_KEY]
 
     # Session state init for chat messages
@@ -337,11 +360,14 @@ if mode == MODE_CHAT:
     if CHAT_APPROVED_KEY not in st.session_state:
         st.session_state[CHAT_APPROVED_KEY] = set()
 
+    # ------------------------------
     # Sidebar info (Chat mode)
+    # ------------------------------
     with st.sidebar:
-        st.subheader("Status")
+        st.subheader("Status:")
         st.write(f"Chat tools available to LLM: **{len(chat_tools)}**")
         st.markdown("**Mode:** Chat with deployment")
+
         st.markdown("**Connected tenant**")
         st.write(f"Domain: `{chat_tenant_config.get('domain', '')}`")
         st.write(f"SSL verification: `{chat_tenant_config.get('ssl', True)}`")
@@ -361,23 +387,29 @@ if mode == MODE_CHAT:
                     del st.session_state[key]
             st.rerun()
 
-        st.markdown(
-            """
-**Examples:**
-- Show me all users
-- List all dashboards
-- Show all data models
-- Show all tables and columns in 'ecommerce_db' datamodel.
-- Add a table called "top_customers" in datamodel "ecommerce_db"
-- Create an elasticube called “nyctaxi_ec” using connection “pysense_databricks”, database “samples”, schema “nyctaxi”. Add tables trips and vendors.
+        # Collapse examples to reduce vertical clutter
+        with st.expander("Examples", expanded=False):
+            st.markdown(
+                """
+- Show me all users  
+- List all dashboards  
+- Show all data models  
+- Show all tables and columns in 'ecommerce_db' datamodel  
+- Add a table called "top_customers" in datamodel "ecommerce_db"  
+- Create an elasticube called "nyctaxi_ec" using connection "pysense_databricks", database "samples", schema "nyctaxi". Add tables trips and vendors.
 """
-        )
+            )
+
         st.markdown("---")
         st.caption(
             "Agentic assistant for Sisense, powered by an LLM and MCP, "
             "using PySisense tools for autonomous tool selection, execution, "
             "and result summarization."
         )
+
+    # ------------------------------
+    # Main chat area (not in sidebar)
+    # ------------------------------
 
     # Render chat history (Chat mode). Hide the last user request if it has just been approved.
     for i, msg in enumerate(st.session_state[CHAT_MESSAGES_KEY]):
@@ -408,7 +440,10 @@ if mode == MODE_CHAT:
         )
         with st.expander("View operation details", expanded=True):
             st.markdown("**Tool:** `{}`".format(pending.get("tool_id", "")))
-            st.code(json.dumps(pending.get("arguments", {}), indent=2), language="json")
+            st.code(
+                json.dumps(pending.get("arguments", {}), indent=2),
+                language="json",
+            )
 
         cols = st.columns([1, 1])
         with cols[0]:
@@ -581,10 +616,12 @@ if mode == MODE_CHAT:
                         # Clear pending, add a small assistant message, rerun so input returns
                         st.session_state[CHAT_PENDING_KEY] = None
                         st.session_state[CHAT_MESSAGES_KEY].append(
-                            {"role": "assistant", "content": "Action cancelled."}
+                            {
+                                "role": "assistant",
+                                "content": "Action cancelled.",
+                            }
                         )
                         st.rerun()
-
             else:
                 # Normal path: render table for THIS turn (if any)
                 if tr:
@@ -602,7 +639,6 @@ if mode == MODE_CHAT:
                         "tool_result": tr,
                     }
                 )
-
 
 # ======================================================================
 # MODE 2: MIGRATE BETWEEN DEPLOYMENTS
@@ -715,7 +751,7 @@ if mode == MODE_MIGRATION:
 
     # Sidebar info (Migration mode)
     with st.sidebar:
-        st.subheader("Status")
+        st.subheader("Status:")
         st.write(f"Migration tools available to LLM: **{len(migration_tools)}**")
         st.markdown("**Mode:** Migrate between deployments")
 

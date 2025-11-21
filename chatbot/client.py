@@ -56,6 +56,15 @@ ALLOW_MUTATING_TOOLS = True
 # If True, mutating tool calls require an explicit approval from the UI.
 REQUIRE_MUTATION_CONFIRM = True
 
+# -----------------------------------------------------------------------------
+# Summarization controls (data exposure to LLM)
+# -----------------------------------------------------------------------------
+# If False, tool results (data) will NOT be sent to the LLM for summarization.
+# The planning call is still allowed, but the follow-up summarization call is skipped.
+# Default comes from env var ALLOW_SUMMARIZATION (true/false), falling back to True.
+ALLOW_SUMMARIZATION = os.getenv("ALLOW_SUMMARIZATION", "true").strip().lower() == "true"
+logger.info("ALLOW_SUMMARIZATION=%s", ALLOW_SUMMARIZATION)
+
 # Separate audit logger for mutations
 audit_logger = logging.getLogger("client.mutations")
 audit_logger.setLevel(level)
@@ -429,7 +438,9 @@ async def call_llm_with_tools(
     High-level helper:
     - Planning call: LLM + tools with PLANNING_SYSTEM_PROMPT.
     - If it asks to call a tool, execute via MCP (with safety for mutating tools).
-    - Summarisation call: LLM without tools with SUMMARY_SYSTEM_PROMPT.
+    - Summarisation call: LLM without tools with SUMMARY_SYSTEM_PROMPT,
+      but ONLY if ALLOW_SUMMARIZATION is True. When False, no tool results
+      are sent to the LLM and a simple local summary is returned.
     - If planning or summarisation fails, fall back to simple Python summary.
 
     UI integration for mutations:
@@ -541,7 +552,7 @@ async def call_llm_with_tools(
                     name,
                     json.dumps(args, ensure_ascii=False),
                 )
-                # Return immediately; the UI render the confirm buttons
+                # Return immediately; the UI should render the confirm buttons
                 return (
                     "This action requires confirmation in the UI before proceeding."
                 )
@@ -575,6 +586,7 @@ async def call_llm_with_tools(
                         if not isinstance(row, dict):
                             continue
                         light = {}
+                        # Use at most MAX_COLS_FOR_LLM columns
                         for i, (k, v) in enumerate(row.items()):
                             if i >= MAX_COLS_FOR_LLM:
                                 break
@@ -599,8 +611,57 @@ async def call_llm_with_tools(
         )
 
     # ======================================================================
-    # 3) SUMMARISATION CALL (no tools)
+    # 3) SUMMARISATION CALL (no tools) OR LOCAL SUMMARY IF DISABLED
     # ======================================================================
+    if not ALLOW_SUMMARIZATION:
+        # Summarization to external LLM is disabled: do NOT send tool results
+        # to the model. Return a simple local status message instead.
+        logger.info(
+            "Summarization is disabled (ALLOW_SUMMARIZATION=False); "
+            "skipping LLM summary call."
+        )
+
+        row_count = None
+        last_tool_name = None
+        try:
+            if tool_messages_for_llm:
+                last_tool_msg = tool_messages_for_llm[-1]
+                last_tool_name = last_tool_msg.get("name")
+                content = json.loads(last_tool_msg.get("content", "{}"))
+                row_count = content.get("row_count")
+        except Exception:
+            row_count = None
+
+        if row_count is not None and last_tool_name:
+            final_content = (
+                f"I successfully ran the tool `{last_tool_name}` and got **{row_count}** rows. "
+                "Summarization to an external LLM is disabled by configuration, so no data "
+                "was sent to the LLM and only this basic status message is available. If you "
+                "want to enable summarization, please toggle the setting in the Privacy & Controls section."
+            )
+        elif last_tool_name:
+            final_content = (
+                f"I successfully ran the tool `{last_tool_name}`. "
+                "Summarization to an external LLM is disabled by configuration, so no data "
+                "was sent to the LLM and only this basic status message is available. If you "
+                "want to enable summarization, please toggle the setting in the Privacy & Controls section."
+            )
+        else:
+            final_content = (
+                "I successfully ran the requested tool(s). "
+                "Summarization to an external LLM is disabled by configuration, so no data "
+                "was sent to the LLM and only this basic status message is available. If you "
+                "want to enable summarization, please toggle the setting in the Privacy & Controls section."
+            )
+
+        logger.info(
+            "Final assistant summary (local-only, summarization disabled):\n%s",
+            final_content,
+        )
+        logger.info("=== call_llm_with_tools END (summarization disabled) ===")
+        return final_content
+
+    # If summarization is allowed, proceed with the existing LLM follow-up call
     followup_messages = [
         {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
         last_user,
