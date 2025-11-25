@@ -205,7 +205,7 @@ def json_schema_from_signature(
 
 
 # ---------------------------------------------------------------------------
-# Mutate detection + tags (same logic as before)
+# Mutate detection + tags
 # ---------------------------------------------------------------------------
 
 _MUTATE_PAT = re.compile(

@@ -114,8 +114,6 @@ MAIN_DOC_FILES = {
 # -----------------------------------------------------------------------------
 # Schema enrichment rules (enums, aliases, type fixes)
 # -----------------------------------------------------------------------------
-# These are minimal, deterministic patches for tricky parameters where
-# the base registry schema is not enough on its own.
 SCHEMA_RULES: Dict[str, Dict[str, Any]] = {
     # Create DataModel → constrain datamodel_type
     "datamodel.create_datamodel": {
@@ -147,7 +145,7 @@ SCHEMA_RULES: Dict[str, Dict[str, Any]] = {
             "parameters.properties.row_limit.minimum": 1,
         }
     },
-    # Setup DataModel (if present) – optional helpful constraints
+    # Setup DataModel – optional helpful constraints
     "datamodel.setup_datamodel": {
         "patch": {
             "parameters.properties.datamodel_type.enum": ["extract", "live"],

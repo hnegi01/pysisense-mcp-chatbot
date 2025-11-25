@@ -468,12 +468,12 @@ async def call_llm_with_tools(
     LAST_TOOL_RESULT = None
 
     # ----- find last user -----
-    last_user = None
+    latest_user_message = None
     for m in reversed(messages):
         if m.get("role") == "user":
-            last_user = m
+            latest_user_message = m
             break
-    if last_user is None:
+    if latest_user_message is None:
         raise ValueError("No user message found for LLM planning call.")
 
     # ======================================================================
@@ -481,7 +481,7 @@ async def call_llm_with_tools(
     # ======================================================================
     planning_messages = [
         {"role": "system", "content": PLANNING_SYSTEM_PROMPT},
-        last_user,
+        latest_user_message,
     ]
     _log_json_truncated("Planning messages", planning_messages)
 
@@ -494,7 +494,7 @@ async def call_llm_with_tools(
             "Planning LLM call failed with HTTPError (%s). Falling back to direct tool.",
             e,
         )
-        summary, result = await _fallback_direct_tool(last_user["content"], mcp_client)
+        summary, result = await _fallback_direct_tool(latest_user_message["content"], mcp_client)
         LAST_TOOL_RESULT = result
         logger.info("=== call_llm_with_tools END (fallback after planning error) ===")
         return summary
@@ -664,7 +664,7 @@ async def call_llm_with_tools(
     # If summarization is allowed, proceed with the existing LLM follow-up call
     followup_messages = [
         {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
-        last_user,
+        latest_user_message,
         message,
     ] + tool_messages_for_llm
 

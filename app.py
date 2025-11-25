@@ -391,11 +391,11 @@ if mode == MODE_CHAT:
         with st.expander("Examples", expanded=False):
             st.markdown(
                 """
-- Show me all users  
-- List all dashboards  
-- Show all data models  
-- Show all tables and columns in 'ecommerce_db' datamodel  
-- Add a table called "top_customers" in datamodel "ecommerce_db"  
+- Show me all users
+- List all dashboards
+- Show all data models
+- Show all tables and columns in 'ecommerce_db' datamodel
+- Add a table called "top_customers" in datamodel "ecommerce_db"
 - Create an elasticube called "nyctaxi_ec" using connection "pysense_databricks", database "samples", schema "nyctaxi". Add tables trips and vendors.
 """
             )

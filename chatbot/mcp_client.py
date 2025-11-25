@@ -84,7 +84,7 @@ class McpClient:
       For non-migration tools, this is merged into the arguments as
       `domain`, `token`, and `ssl` so every tool invocation is tenant-scoped.
 
-    MIGRATION (future wiring):
+    MIGRATION (migration mode):
     - Accepts an optional migration_config dict:
         {
           "source": {"domain": str, "token": str, "ssl": bool},
