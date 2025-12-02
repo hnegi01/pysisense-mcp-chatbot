@@ -38,3 +38,6 @@ docs_src/
 
 #extra files
 sisense_mcp_flow.md
+
+# Yaml
+*.yaml

@@ -99,6 +99,7 @@ EXAMPLE_FILES = {
     "datamodel": "datamodel_example.md",
     "dashboard": "dashboard_example.md",
     "migration": "migration_example.md",
+    "wellcheck": "wellcheck_example.md",
 }
 
 # 2) Main module docs (for param descriptions / enums etc.)
@@ -109,94 +110,8 @@ MAIN_DOC_FILES = {
     "datamodel": "datamodel.md",
     "dashboard": "dashboard.md",
     "migration": "migration.md",
+    "wellcheck": "wellcheck.md",
 }
-
-# -----------------------------------------------------------------------------
-# Schema enrichment rules (enums, aliases, type fixes)
-# -----------------------------------------------------------------------------
-SCHEMA_RULES: Dict[str, Dict[str, Any]] = {
-    # Create DataModel → constrain datamodel_type
-    "datamodel.create_datamodel": {
-        "patch": {
-            "parameters.properties.datamodel_type.enum": ["extract", "live"],
-            "parameters.properties.datamodel_type.x-aliases": {
-                "extract": ["ec", "elasticube", "elastic cube", "cube", "elastic-cube"],
-                "live": ["realtime", "real-time", "live model"],
-            },
-            "parameters.properties.datamodel_type.description": (
-                "Either 'extract' (Elasticube/EC) or 'live'. "
-                "If user says 'elasticube' or 'ec', normalize to 'extract'."
-            ),
-        }
-    },
-    # Deploy/Build DataModel → constrain build_type / schema_origin / row_limit type
-    "datamodel.deploy_datamodel": {
-        "patch": {
-            "parameters.properties.build_type.enum": ["full", "by_table"],
-            "parameters.properties.build_type.x-aliases": {
-                "full": ["build", "rebuild", "start", "run", "execute", "refresh"],
-                "by_table": ["by-table", "table-wise", "incremental-tables"],
-            },
-            "parameters.properties.build_type.description": (
-                "Build strategy for extract models. Omit for live/publish."
-            ),
-            "parameters.properties.schema_origin.enum": ["latest", "schema_changes"],
-            "parameters.properties.row_limit.type": "integer",
-            "parameters.properties.row_limit.minimum": 1,
-        }
-    },
-    # Setup DataModel – optional helpful constraints
-    "datamodel.setup_datamodel": {
-        "patch": {
-            "parameters.properties.datamodel_type.enum": ["extract", "live"],
-            "parameters.properties.datamodel_type.x-aliases": {
-                "extract": ["ec", "elasticube", "elastic cube", "cube", "elastic-cube"],
-                "live": ["realtime", "real-time", "live model"],
-            },
-            "parameters.properties.row_limit.type": "integer",
-            "parameters.properties.row_limit.minimum": 1,
-        }
-    },
-}
-
-
-def _walk_and_set(d: Dict[str, Any], dotted_path: str, value: Any) -> None:
-    """
-    Create/overwrite a nested key in dict given a dotted path (e.g.,
-    'parameters.properties.row_limit.minimum').
-    """
-    parts = dotted_path.split(".")
-    cur = d
-    for p in parts[:-1]:
-        if p not in cur or not isinstance(cur[p], dict):
-            cur[p] = {}
-        cur = cur[p]
-    cur[parts[-1]] = value
-
-
-def apply_schema_rules(tool: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Mutates the tool dict in-place to inject enums/aliases/type hints
-    based on SCHEMA_RULES. If a path doesn't exist, it's created.
-    """
-    tool_id = tool.get("tool_id", "")
-    rules = SCHEMA_RULES.get(tool_id)
-    if not rules:
-        return tool
-
-    params = tool.get("parameters")
-    if not isinstance(params, dict):
-        # Ensure parameters object exists for patching
-        params = {"type": "object", "properties": {}, "required": []}
-        tool["parameters"] = params
-
-    for dotted, val in rules.get("patch", {}).items():
-        try:
-            _walk_and_set(tool, dotted, val)
-        except Exception as e:
-            logger.warning("Failed to set schema patch %s for %s: %s", dotted, tool_id, e)
-
-    return tool
 
 # -----------------------------------------------------------------------------
 # Helpers
@@ -205,14 +120,16 @@ def apply_schema_rules(tool: Dict[str, Any]) -> Dict[str, Any]:
 
 def get_docs_for_tool(tool: Dict[str, Any]) -> str:
     """
-    Load both example docs and main docs for the module (if available)
-    and combine them into a single text blob passed to the LLM.
+    Load example docs, main docs, and (optionally) the Python docstring for this
+    specific method, and combine them into a single text blob for the LLM.
 
     This gives the model:
       - concrete usage examples (examples/*.md),
-      - richer parameter descriptions, allowed values, etc. (docs/*.md)
+      - richer parameter / behavior descriptions (docs/*.md),
+      - method-specific semantics (full_doc from the SDK).
     """
     module = tool.get("module")
+    full_doc = (tool.get("full_doc") or "").strip()
 
     texts: List[str] = []
 
@@ -222,7 +139,7 @@ def get_docs_for_tool(tool: Dict[str, Any]) -> str:
         ex_path = EXAMPLES_ROOT / ex_filename
         if ex_path.exists():
             try:
-                texts.append(ex_path.read_text(encoding="utf-8"))
+                texts.append("EXAMPLE DOCS:\n" + ex_path.read_text(encoding="utf-8"))
             except Exception as e:
                 logger.warning("Failed to read example docs for %s: %s", module, e)
 
@@ -232,9 +149,13 @@ def get_docs_for_tool(tool: Dict[str, Any]) -> str:
         main_path = MAIN_DOCS_ROOT / main_filename
         if main_path.exists():
             try:
-                texts.append(main_path.read_text(encoding="utf-8"))
+                texts.append("MODULE DOCS:\n" + main_path.read_text(encoding="utf-8"))
             except Exception as e:
                 logger.warning("Failed to read main docs for %s: %s", module, e)
+
+    # Method-level Python docstring from the SDK (if present)
+    if full_doc:
+        texts.append("PYTHON DOCSTRING FOR THIS METHOD:\n" + full_doc)
 
     if not texts:
         return ""
@@ -247,8 +168,8 @@ def build_prompt_for_tool(tool: Dict[str, Any], docs_text: str = "") -> str:
     """
     Build a prompt asking the LLM to generate examples for a single tool.
     We pass the enriched parameters (with enums/aliases) to steer outputs
-    and include documentation text (examples + main docs) so that parameter
-    meanings and valid values are respected.
+    and include documentation text (examples + main docs + Python docstring)
+    so that parameter meanings and valid values are respected.
     """
     params_schema = json.dumps(tool.get("parameters", {}), indent=2)
     description = tool.get("description", "")
@@ -257,7 +178,7 @@ def build_prompt_for_tool(tool: Dict[str, Any], docs_text: str = "") -> str:
     method_name = tool.get("method", "this_method")
 
     docs_section = (
-        f"\n\nExisting documentation and example code for this module:\n{docs_text}"
+        f"\n\nExisting documentation and example code for this module and method:\n{docs_text}"
         if docs_text
         else ""
     )
@@ -274,7 +195,7 @@ Tool metadata:
 - tags: {tags}
 - mutates_data: {mutates}
 
-Parameters JSON schema (this is the source of truth for parameter names, types, and enums):
+Parameters JSON schema (this is the source of truth for parameter names, types, enums, and descriptions):
 {params_schema}
 {docs_section}
 
@@ -363,6 +284,10 @@ def call_llm(prompt: str, max_retries: int = 5, base_delay: float = 2.0) -> str:
 def load_base_registry(root_dir: Path) -> List[Dict[str, Any]]:
     """
     Load the base registry (without examples) from config/tools.registry.json.
+    This registry is already enriched by build_registry.py:
+      - correct parameter schema
+      - enums/aliases from schema rules
+      - full_doc (Python docstring) per tool
     """
     registry_path = root_dir / "config" / "tools.registry.json"
     if not registry_path.exists():
@@ -375,15 +300,39 @@ def load_existing_with_examples(root_dir: Path) -> Dict[str, Dict[str, Any]]:
     """
     If tools.registry.with_examples.json exists, load it and return a dict by tool_id
     so we can resume without losing previous work.
+
+    If the file is empty or contains invalid JSON, log a warning and start fresh.
     """
     path = root_dir / "config" / "tools.registry.with_examples.json"
     if not path.exists():
         return {}
 
-    with path.open("r", encoding="utf-8") as f:
-        tools = json.load(f)
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            content = f.read().strip()
+            if not content:
+                logger.warning(
+                    "tools.registry.with_examples.json is empty at %s; ignoring and starting fresh",
+                    path,
+                )
+                return {}
+            tools = json.loads(content)
+    except json.JSONDecodeError as exc:
+        logger.warning(
+            "Failed to parse existing with_examples file at %s (%s); ignoring and starting fresh",
+            path,
+            exc,
+        )
+        return {}
 
-    return {t["tool_id"]: t for t in tools if "tool_id" in t}
+    if not isinstance(tools, list):
+        logger.warning(
+            "Existing with_examples file at %s is not a list; ignoring and starting fresh",
+            path,
+        )
+        return {}
+
+    return {t.get("tool_id"): t for t in tools if isinstance(t, dict) and t.get("tool_id")}
 
 
 def main() -> None:
@@ -405,8 +354,7 @@ def main() -> None:
     for idx, tool in enumerate(base_tools, start=1):
         tool_id = tool.get("tool_id")
 
-        # Apply schema enrichment BEFORE calling the LLM so examples align
-        tool = apply_schema_rules(tool)
+        # Schema is already enriched by build_registry.py; we only add examples here.
 
         # Reuse existing entry with examples
         existing = existing_by_id.get(tool_id)
@@ -417,7 +365,7 @@ def main() -> None:
                 total,
                 tool_id,
             )
-            # Keep the enriched schema (ours) but copy examples from existing
+            # Keep the current schema, but copy examples from existing
             tool["examples"] = existing.get("examples", [])
             enriched_tools.append(tool)
             continue

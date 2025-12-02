@@ -11,6 +11,7 @@ from pysisense.access_management import AccessManagement
 from pysisense.datamodel import DataModel
 from pysisense.dashboard import Dashboard
 from pysisense.migration import Migration
+from pysisense.wellcheck import WellCheck
 
 
 MODULES = {
@@ -18,38 +19,215 @@ MODULES = {
     "datamodel": DataModel,
     "dashboard": Dashboard,
     "migration": Migration,
+    "wellcheck": WellCheck,
 }
 
 # ---------------------------------------------------------------------------
-# Helper: parse parameter type hints from docstring
+# Helper: parse parameter meta from docstring (Google-style + NumPy-style)
 # ---------------------------------------------------------------------------
 
-# Matches lines like: "param_name (list, optional): description..."
-_PARAM_LINE_RE = re.compile(
-    r"^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]+)\)\s*:",
+# Google-style param lines like:
+#   action (str, optional): Determines how to handle...
+_GOOGLE_PARAM_LINE_RE = re.compile(
+    r"^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]+)\)\s*:\s*(.*)$",
     re.MULTILINE,
 )
 
+# NumPy-style param header lines like:
+#   action : str, optional
+_NUMPY_PARAM_LINE_RE = re.compile(
+    r"^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*([^$]+)$"
+)
 
-def _parse_param_doc_types(doc: str) -> Dict[str, str]:
+
+def _parse_param_doc_meta_google(doc: str) -> Dict[str, Dict[str, str]]:
     """
-    Parse a docstring and extract simple type hints from lines like:
-        param_name (list, optional): ...
-        param_name (dict, optional): ...
-        param_name (bool, optional): ...
-    Returns a mapping: {param_name: 'list', ...}
+    Parse a Google-style Parameters section, e.g.:
+
+        Parameters:
+            action (str, optional): Determines how to handle...
+                Wrapped line continues here.
+            folder_name (str): The target folder whose ownership needs to be
+                changed.
+
+    Returns:
+        {
+          "action": {"type": "str", "description": "Determines how to handle... Wrapped line continues here."},
+          "folder_name": {"type": "str", "description": "The target folder whose ownership needs to be changed."},
+          ...
+        }
     """
     if not doc:
         return {}
 
-    type_map: Dict[str, str] = {}
-    for match in _PARAM_LINE_RE.finditer(doc):
-        name = match.group(1)
-        type_part = match.group(2)
-        # Take only the first token before comma, e.g. "list" from "list, optional"
-        type_token = type_part.split(",")[0].strip()
-        type_map[name] = type_token
-    return type_map
+    lines = doc.splitlines()
+    meta: Dict[str, Dict[str, str]] = {}
+
+    in_params = False
+    current_name = None
+    current_type = None
+    current_desc_parts: List[str] = []
+
+    def flush_current() -> None:
+        nonlocal current_name, current_type, current_desc_parts
+        if current_name:
+            desc = " ".join(current_desc_parts).strip()
+            meta[current_name] = {
+                "type": current_type or "",
+                "description": desc,
+            }
+        current_name = None
+        current_type = None
+        current_desc_parts = []
+
+    for raw in lines:
+        line = raw.rstrip("\n")
+        stripped = line.strip()
+
+        # Detect start of Parameters: block
+        if not in_params:
+            if stripped.lower().startswith("parameters:"):
+                in_params = True
+            continue
+
+        # Detect end of Parameters: section when another top-level section starts
+        if stripped.endswith(":") and stripped.split(":", 1)[0] in {
+            "Returns",
+            "Return",
+            "Raises",
+            "Notes",
+            "Examples",
+        }:
+            flush_current()
+            break
+
+        # Try to match a new parameter header line
+        m = _GOOGLE_PARAM_LINE_RE.match(line)
+        if m:
+            # Flush previous param if any
+            flush_current()
+
+            current_name = m.group(1)
+            type_part = m.group(2)
+            current_type = type_part.split(",")[0].strip()
+            first_desc = m.group(3).strip()
+            current_desc_parts = [first_desc] if first_desc else []
+            continue
+
+        # Otherwise, if we are inside a param and this is an indented non-empty line,
+        # treat it as a continuation of the description.
+        if current_name and stripped:
+            # Any indented non-empty line after the header is considered continuation
+            if line.startswith(" ") or line.startswith("\t"):
+                current_desc_parts.append(stripped)
+
+    # Flush last param at end of doc
+    flush_current()
+
+    return meta
+
+
+def _parse_param_doc_meta_numpy(doc: str) -> Dict[str, Dict[str, str]]:
+    """
+    Parse a NumPy-style Parameters section, e.g.:
+
+        Parameters
+        ----------
+        action : str, optional
+            Determines how to handle...
+            Wrapped line continues here.
+        folder_name : str
+            The target folder whose ownership needs to be changed.
+
+    Returns the same structure as the Google-style parser.
+    """
+    if not doc:
+        return {}
+
+    lines = doc.splitlines()
+    meta: Dict[str, Dict[str, str]] = {}
+
+    in_params = False
+    seen_separator = False
+    current_name = None
+    current_type = None
+    current_desc_parts: List[str] = []
+
+    def flush_current() -> None:
+        nonlocal current_name, current_type, current_desc_parts
+        if current_name:
+            desc = " ".join(current_desc_parts).strip()
+            meta[current_name] = {
+                "type": current_type or "",
+                "description": desc,
+            }
+        current_name = None
+        current_type = None
+        current_desc_parts = []
+
+    for raw in lines:
+        line = raw.rstrip("\n")
+        stripped = line.strip()
+        indent = len(line) - len(line.lstrip(" "))
+
+        if not in_params:
+            # Look for a NumPy-style "Parameters" heading (no colon)
+            if stripped == "Parameters":
+                in_params = True
+                seen_separator = False
+            continue
+
+        # After "Parameters", NumPy usually has a "------" separator; skip it
+        if in_params and not seen_separator:
+            if set(stripped) == {"-"} and stripped:
+                seen_separator = True
+            # Skip until we see the separator; do not parse headers yet
+            continue
+
+        # End of Parameters section: another top-level section heading with no indent
+        if indent == 0 and stripped in {
+            "Returns",
+            "Yields",
+            "Raises",
+            "Notes",
+            "Examples",
+        }:
+            flush_current()
+            break
+
+        # Try to match a new NumPy-style parameter header line
+        m = _NUMPY_PARAM_LINE_RE.match(line)
+        if m and indent == 0:
+            flush_current()
+            current_name = m.group(1)
+            type_text = m.group(2)
+            current_type = type_text.split(",")[0].strip()
+            current_desc_parts = []
+            continue
+
+        # If we are inside a param and see an indented non-empty line, treat as description continuation
+        if current_name and stripped and indent >= 4:
+            current_desc_parts.append(stripped)
+
+    flush_current()
+    return meta
+
+
+def _parse_param_doc_meta(doc: str) -> Dict[str, Dict[str, str]]:
+    """
+    Combine Google-style and NumPy-style parameter metadata.
+
+    If both styles define the same param, NumPy-style wins (on the assumption
+    that newer methods may use NumPy style).
+    """
+    google_meta = _parse_param_doc_meta_google(doc)
+    numpy_meta = _parse_param_doc_meta_numpy(doc)
+
+    combined = dict(google_meta)
+    for name, info in numpy_meta.items():
+        combined[name] = info
+
+    return combined
 
 
 # ---------------------------------------------------------------------------
@@ -160,13 +338,13 @@ def json_schema_from_signature(
     """
     Build a JSON schema for a method based on:
     - Python signature defaults (bool/int/list/dict → type inference)
-    - Docstring param type hints for None/default-less params
+    - Docstring param type hints + multi-line param descriptions
     - Generic name-based heuristics (e.g. *_ids → array)
     """
     properties: Dict[str, Dict[str, Any]] = {}
     required: List[str] = []
 
-    doc_type_map = _parse_param_doc_types(doc)
+    doc_meta = _parse_param_doc_meta(doc)
 
     for name, p in sig.parameters.items():
         if name == "self":
@@ -175,10 +353,13 @@ def json_schema_from_signature(
         # Start with type from default
         schema_piece = _schema_type_from_default(p.default)
 
-        # Refine from docstring if default didn't give us anything useful
-        if (p.default is inspect._empty or p.default is None) and name in doc_type_map:
-            hint_piece = _schema_type_from_doc_hint(doc_type_map[name])
-            schema_piece.update(hint_piece)
+        # Refine from docstring if default did not give us anything useful
+        meta = doc_meta.get(name)
+        if meta:
+            doc_type = meta.get("type")
+            if (p.default is inspect._empty or p.default is None) and doc_type:
+                hint_piece = _schema_type_from_doc_hint(doc_type)
+                schema_piece.update(hint_piece)
 
         # Ensure arrays always have "items"
         if schema_piece.get("type") == "array" and "items" not in schema_piece:
@@ -187,8 +368,10 @@ def json_schema_from_signature(
         # Apply generic name-based heuristics (no per-tool logic)
         schema_piece = _apply_name_heuristics(name, schema_piece)
 
-        # Basic description if not set
-        if "description" not in schema_piece:
+        # Param-level description: prefer docstring text if available
+        if meta and meta.get("description"):
+            schema_piece["description"] = meta["description"]
+        elif "description" not in schema_piece:
             schema_piece["description"] = f"{name} parameter"
 
         properties[name] = schema_piece
@@ -208,21 +391,63 @@ def json_schema_from_signature(
 # Mutate detection + tags
 # ---------------------------------------------------------------------------
 
+# Allow inflected forms and names like "delete_user", "Deletes", "Deleting"
 _MUTATE_PAT = re.compile(
-    r"\b(create|update|delete|remove|assign|set|share|build|schedule|migrate|post|patch|put)\b",
+    r"\b(create|update|delete|remove|assign|set|share|build|schedule|migrate|post|patch|put)\w*\b",
     re.IGNORECASE,
 )
 
-_READ_PREFIXES = ("get_", "list_", "fetch_", "find_", "count_", "preview_", "show_")
+_READ_PREFIXES = (
+    "get_",
+    "list_",
+    "fetch_",
+    "find_",
+    "count_",
+    "preview_",
+    "show_",
+    "check_",
+)
+
+_MUTATE_PREFIXES = (
+    "create_",
+    "update_",
+    "delete_",
+    "remove_",
+    "assign_",
+    "set_",
+    "share_",
+    "build_",
+    "schedule_",
+    "migrate_",
+    "post_",
+    "patch_",
+    "put_",
+    "add_",
+    "upload_",
+)
 
 
 def is_mutating(name: str, doc: str) -> bool:
-    # 1) If it's a "get/list/etc", treat as non-mutating
+    """
+    Heuristic for whether a method mutates server state.
+
+    - Methods starting with read-style prefixes (get/list/find/preview/show/check)
+      are treated as non-mutating.
+    - Methods starting with mutation-style prefixes (create/update/delete/...)
+      are treated as mutating.
+    - Otherwise, we fall back to a regex search over the name + docstring.
+    """
     lowered = name.lower()
+
+    # 1) Read-style prefixes → non-mutating
     if lowered.startswith(_READ_PREFIXES):
         return False
 
-    # 2) Otherwise, fall back to the mutate-verb heuristic
+    # 2) Mutation-style prefixes → mutating
+    if lowered.startswith(_MUTATE_PREFIXES):
+        return True
+
+    # 3) Fallback: look for mutate verbs in name + doc (including inflected forms)
     text = f"{name} {doc or ''}"
     return bool(_MUTATE_PAT.search(text))
 
@@ -253,6 +478,210 @@ def infer_tags(module: str, method: str, mutates: bool) -> list:
 
 
 # ---------------------------------------------------------------------------
+# SCHEMA_RULES + apply_schema_rules (shared semantics) hardcoded patches
+# ---------------------------------------------------------------------------
+
+SCHEMA_RULES: Dict[str, Dict[str, Any]] = {
+    # Create DataModel → constrain datamodel_type
+    "datamodel.create_datamodel": {
+        "patch": {
+            "parameters.properties.datamodel_type.enum": ["extract", "live"],
+            "parameters.properties.datamodel_type.x-aliases": {
+                "extract": ["ec", "elasticube", "elastic cube", "cube", "elastic-cube"],
+                "live": ["realtime", "real-time", "live model"],
+            },
+            "parameters.properties.datamodel_type.description": (
+                "Either 'extract' (Elasticube/EC) or 'live'. "
+                "If user says 'elasticube' or 'ec', normalize to 'extract'."
+            ),
+        }
+    },
+
+    # Deploy/Build DataModel → constrain build_type / schema_origin / row_limit type
+    "datamodel.deploy_datamodel": {
+        "patch": {
+            "parameters.properties.build_type.enum": ["full", "by_table"],
+            "parameters.properties.build_type.x-aliases": {
+                "full": ["build", "rebuild", "start", "run", "execute", "refresh"],
+                "by_table": ["by-table", "table-wise", "incremental-tables"],
+            },
+            "parameters.properties.build_type.description": (
+                "Build strategy for extract models. Omit for live/publish."
+            ),
+            "parameters.properties.schema_origin.enum": ["latest", "schema_changes"],
+            "parameters.properties.row_limit.type": "integer",
+            "parameters.properties.row_limit.minimum": 1,
+        }
+    },
+
+    # Setup DataModel – enums + rich tables schema
+    "datamodel.setup_datamodel": {
+        "patch": {
+            "parameters.properties.datamodel_type.enum": ["extract", "live"],
+            "parameters.properties.datamodel_type.x-aliases": {
+                "extract": ["ec", "elasticube", "elastic cube", "cube", "elastic-cube"],
+                "live": ["realtime", "real-time", "live model"],
+            },
+            "parameters.properties.row_limit.type": "integer",
+            "parameters.properties.row_limit.minimum": 1,
+
+            # Override the auto-generated `tables` schema with a rich object definition
+            "parameters.properties.tables": {
+                "type": "array",
+                "description": (
+                    "List of tables to add. For 'live' models, build_behavior_config is ignored. "
+                    "For 'extract' models, set build_behavior_config as needed."
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "database_name": {
+                            "type": "string",
+                            "description": (
+                                "Optional override of the table's database. Defaults to top-level "
+                                "database_name if omitted."
+                            ),
+                        },
+                        "schema_name": {
+                            "type": "string",
+                            "description": (
+                                "Optional override of the table's schema. Defaults to top-level "
+                                "schema_name if omitted."
+                            ),
+                        },
+                        "table_name": {
+                            "type": "string",
+                            "description": (
+                                "Physical table name to add, or a logical name when using import_query."
+                            ),
+                        },
+                        "import_query": {
+                            "type": "string",
+                            "description": (
+                                "Optional custom SQL to import rows (e.g., SELECT ... LIMIT 10). "
+                                "If provided, supersedes physical table fetch."
+                            ),
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Optional table description.",
+                        },
+                        "tags": {
+                            "type": "array",
+                            "description": "Optional list of tags for the table.",
+                            "items": {"type": "string"},
+                        },
+                        "build_behavior_config": {
+                            "type": "object",
+                            "description": (
+                                "Only used for 'extract' models. Ignored for 'live'. "
+                                "For 'increment' mode, column_name is required."
+                            ),
+                            "properties": {
+                                "mode": {
+                                    "type": "string",
+                                    "enum": ["replace", "replace_changes", "append", "increment"],
+                                    "description": "Table build behavior for extract models.",
+                                },
+                                "column_name": {
+                                    "type": "string",
+                                    "description": (
+                                        "Required when mode='increment'; ignored otherwise."
+                                    ),
+                                },
+                            },
+                        },
+                    },
+                    "required": ["table_name"],
+                },
+                "minItems": 1,
+            },
+        }
+    },
+
+    # Migration – all dashboards
+    "migration.migrate_all_dashboards": {
+        "patch": {
+            "parameters.properties.action.enum": ["skip", "overwrite", "duplicate"],
+        }
+    },
+
+    # Migration – all datamodels
+    "migration.migrate_all_datamodels": {
+        "patch": {
+            "parameters.properties.dependencies.items.enum": [
+                "dataSecurity",
+                "formulas",
+                "hierarchies",
+                "perspectives",
+            ],
+            "parameters.properties.action.enum": ["overwrite", "duplicate"],
+        }
+    },
+
+    # Migration – single dashboard
+    "migration.migrate_dashboards": {
+        "patch": {
+            "parameters.properties.action.enum": ["skip", "overwrite", "duplicate"],
+        }
+    },
+
+    # Migration – single datamodel
+    "migration.migrate_datamodels": {
+        "patch": {
+            # dependencies: specific dependency types
+            "parameters.properties.dependencies.items.enum": [
+                "dataSecurity",
+                "formulas",
+                "hierarchies",
+                "perspectives",
+            ],
+
+            # action: overwrite vs duplicate
+            "parameters.properties.action.enum": ["overwrite", "duplicate"],
+        }
+    },
+
+}
+
+
+def _walk_and_set(d: Dict[str, Any], dotted_path: str, value: Any) -> None:
+    """
+    Create/overwrite a nested key in dict given a dotted path (e.g.,
+    'parameters.properties.row_limit.minimum').
+    """
+    parts = dotted_path.split(".")
+    cur = d
+    for p in parts[:-1]:
+        if p not in cur or not isinstance(cur[p], dict):
+            cur[p] = {}
+        cur = cur[p]
+    cur[parts[-1]] = value
+
+
+def apply_schema_rules(tool: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Mutates the tool dict in-place to inject enums/aliases/type hints
+    based on SCHEMA_RULES. If a path does not exist, it is created.
+    """
+    tool_id = tool.get("tool_id", "")
+    rules = SCHEMA_RULES.get(tool_id)
+    if not rules:
+        return tool
+
+    params = tool.get("parameters")
+    if not isinstance(params, dict):
+        # Ensure parameters object exists for patching
+        params = {"type": "object", "properties": {}, "required": []}
+        tool["parameters"] = params
+
+    for dotted, val in rules.get("patch", {}).items():
+        _walk_and_set(tool, dotted, val)
+
+    return tool
+
+
+# ---------------------------------------------------------------------------
 # Registry builder
 # ---------------------------------------------------------------------------
 
@@ -279,22 +708,26 @@ def build_registry() -> list:
             mutates = is_mutating(name, doc)
             tags = infer_tags(module_name, name, mutates)
 
-            registry.append(
-                {
-                    "tool_id": tool_id,
-                    "module": module_name,
-                    "class": klass_name,
-                    "method": name,
-                    "description": one_liner,
-                    "parameters": schema,
-                    "mutates": mutates,
-                    "tags": tags,
-                    "sdk_version": sdk_version,
-                    "updated_at": now_iso,
-                    # placeholder for later enrichment by generate_example.py
-                    "examples": [],
-                }
-            )
+            tool: Dict[str, Any] = {
+                "tool_id": tool_id,
+                "module": module_name,
+                "class": klass_name,
+                "method": name,
+                "description": one_liner,
+                "full_doc": doc,  # Keep full docstring for downstream use
+                "parameters": schema,
+                "mutates": mutates,
+                "tags": tags,
+                "sdk_version": sdk_version,
+                "updated_at": now_iso,
+                # placeholder for later enrichment by generate_example.py
+                "examples": [],
+            }
+
+            # Apply schema-level overrides (enums, aliases, extra descriptions)
+            tool = apply_schema_rules(tool)
+
+            registry.append(tool)
 
     return registry
 

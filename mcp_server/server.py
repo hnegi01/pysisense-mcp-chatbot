@@ -118,6 +118,7 @@ try:
         Dashboard,
         DataModel,
         Migration,
+        WellCheck,
     )
 except Exception as e:
     logger.exception("Failed to import pysisense SDK")
@@ -128,7 +129,7 @@ logger.info(
     "from inline domain/token/ssl at runtime."
 )
 
-SUPPORTED_MODULES = ["access", "dashboard", "datamodel", "migration"]
+SUPPORTED_MODULES = ["access", "dashboard", "datamodel", "migration", "wellcheck"]
 
 # -----------------------------------------------------------------------------
 # Registry load / normalize
@@ -321,6 +322,8 @@ def _get_module_instance(module: str, tenant: Dict[str, Any]) -> Any:
         return Dashboard(api_client=client)
     if module == "datamodel":
         return DataModel(api_client=client)
+    if module == "wellcheck":
+        return WellCheck(api_client=client)
 
     logger.error("Module '%s' not recognized for construction.", module)
     raise LookupError(f"Module '{module}' not recognized.")
