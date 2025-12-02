@@ -1,8 +1,8 @@
-# FES Control Center (mcp-pysisense)
+# FES Assistant (mcp-pysisense)
 
 Agentic Streamlit application and MCP (Model Context Protocol) tool server built on top of the [PySisense](https://github.com/sisense/pysisense) SDK.
 
-FES Control Center lets Sisense Field Engineering (and power users) do two things:
+FES Assistant lets Sisense Field Engineering (and power users) do two things:
 
 1. **Chat with a single Sisense deployment** – ask questions, inspect assets, and perform safe actions via PySisense tools.
 2. **Migrate between deployments** – connect a source and target Sisense environment and use migration-focused tools to move assets.
@@ -42,7 +42,7 @@ Under the hood:
 
 * **Streamlit front-end**
 
-  * **FES Control Center** dashboard.
+  * **FES Assistant** dashboard.
   * Status panel showing available tools and current mode.
   * Forms to connect Sisense environments:
 
@@ -300,9 +300,9 @@ The status panel on the left will now show:
 
 This reduces the risk of accidental changes and makes each migration step auditable from the chat history.
 
-![FES Control Center UI](images/ui1.png)
+![FES Assistant UI](images/ui1.png)
 
-![FES Control Center UI](images/ui2.png)
+![FES Assistant UI](images/ui2.png)
 
 ---
 
