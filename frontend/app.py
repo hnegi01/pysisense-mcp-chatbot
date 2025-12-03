@@ -1,17 +1,27 @@
-import asyncio
-import json
-import logging
+# Streamlit UI for the FES Assistant.
+# - Connects to the backend FastAPI (/agent/turn) for each turn.
+# - Manages per-tab session_id, Sisense tenant configs, and mutation approvals.
+# - Uses MCP + PySisense tools exposed by the backend/MCP server.
+
+import sys
 from pathlib import Path
 
-import pandas as pd
-import streamlit as st
+# ROOT_DIR to the project root
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
-import chatbot.client as chat_client
-from chatbot.client import (
-    call_llm_with_tools,
-    load_tools_for_llm,
-)
-from chatbot.mcp_client import McpClient
+import json
+import logging
+import os
+import uuid
+from datetime import datetime, timedelta
+
+import pandas as pd
+import requests
+import streamlit as st
+from typing import Any, Dict, Tuple
+from logging.handlers import RotatingFileHandler
 
 
 # ------------------------------
@@ -19,7 +29,6 @@ from chatbot.mcp_client import McpClient
 # ------------------------------
 log_level = "debug"  # <- change to "info", "warning", etc. as you like
 
-ROOT_DIR = Path(__file__).resolve().parent
 LOG_DIR = ROOT_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
@@ -31,89 +40,176 @@ logger.setLevel(level)
 # Do not spam console
 logger.propagate = False
 
-# Avoid adding multiple handlers on Streamlit reruns
-if not any(isinstance(h, logging.FileHandler) for h in logger.handlers):
-    fh = logging.FileHandler(LOG_DIR / "app.log", encoding="utf-8")
+if not any(isinstance(h, RotatingFileHandler) for h in logger.handlers):
+    fh = RotatingFileHandler(
+        LOG_DIR / "app.log",
+        maxBytes=10 * 1024 * 1024,  # 10 MB per file
+        backupCount=5,              # keep 5 old files
+        encoding="utf-8",
+    )
     fh.setLevel(level)
     fmt = logging.Formatter(
         "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
     )
     fh.setFormatter(fmt)
     logger.addHandler(fh)
-
 logger.info("App logger initialized at level %s", log_level.upper())
 
 
 # ------------------------------
-# One-turn async helper
+# Backend API URL
 # ------------------------------
-async def _run_turn_once_async(
-    messages,
-    user_input,
-    tools,
-    tenant_config=None,
-    approved_keys=None,
-    migration_config=None,
-):
+BACKEND_URL = os.getenv("FES_BACKEND_URL", "http://localhost:8001")
+logger.info("Using BACKEND_URL=%s", BACKEND_URL)
+
+
+# ------------------------------
+# UI session idle timeout (hours)
+# ------------------------------
+UI_IDLE_TIMEOUT_HOURS = float(os.getenv("FES_UI_IDLE_TIMEOUT_HOURS", "9"))
+
+
+def check_ui_session_timeout() -> None:
     """
-    For a single user message:
-    - create an MCP client
-    - connect (spawns server.py via stdio)
-    - run LLM+tools
-    - close MCP client
+    Enforce a simple idle timeout for the Streamlit session.
 
-    Chat mode:
-      - tenant_config={"domain","token","ssl"}
-      - migration_config=None
-
-    Migration mode:
-      - tenant_config=None
-      - migration_config={
-          "source": {"domain","token","ssl"},
-          "target": {"domain","token","ssl"},
-        }
+    If the last activity was more than UI_IDLE_TIMEOUT_HOURS ago,
+    clear session_state so the user has to reconnect.
     """
-    mcp_client = McpClient(
-        tenant_config=tenant_config,
-        migration_config=migration_config,
-    )
-    await mcp_client.connect()
+    now = datetime.utcnow()
+    last_key = "last_activity_utc"
+    last_raw = st.session_state.get(last_key)
+    expired = False
 
-    reply = await call_llm_with_tools(
-        messages,
-        tools,
-        mcp_client,
-        approved_mutations=approved_keys,
-    )
+    if last_raw:
+        last_dt = None
+        try:
+            if isinstance(last_raw, str):
+                last_dt = datetime.fromisoformat(last_raw)
+            elif isinstance(last_raw, datetime):
+                last_dt = last_raw
+        except Exception:
+            last_dt = None
 
-    await mcp_client.close()
-    return reply
+        if last_dt and (now - last_dt) > timedelta(hours=UI_IDLE_TIMEOUT_HOURS):
+            expired = True
 
-
-def run_turn_once(
-    messages,
-    user_input,
-    tools,
-    tenant_config=None,
-    approved_keys=None,
-    migration_config=None,
-):
-    """Sync wrapper so Streamlit can call async code."""
-    return asyncio.run(
-        _run_turn_once_async(
-            messages,
-            user_input,
-            tools,
-            tenant_config=tenant_config,
-            approved_keys=approved_keys,
-            migration_config=migration_config,
+    if expired:
+        logger.info(
+            "UI session idle for more than %s hours; resetting Streamlit session_state.",
+            UI_IDLE_TIMEOUT_HOURS,
         )
+        # Clear all existing keys
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        # Mark for a one-time message on this rerun
+        st.session_state["session_expired"] = True
+
+    # Always update last activity timestamp
+    st.session_state[last_key] = now.isoformat()
+
+
+def call_backend_turn(
+    messages,
+    user_input,
+    tenant_config=None,
+    approved_keys=None,
+    migration_config=None,
+    session_id=None,
+    allow_summarization=None,
+    mode=None,
+):
+    """
+    Thin HTTP client for the backend /agent/turn API.
+    """
+    payload = {
+        "messages": messages,
+        "user_input": user_input,
+        "tenant_config": tenant_config,
+        "migration_config": migration_config,
+        # approved_keys is a set of (tool_id, args_json); convert to list for JSON
+        "approved_keys": list(approved_keys) if approved_keys else [],
+        "session_id": session_id,
+        "allow_summarization": allow_summarization,
+        "mode": mode,
+    }
+
+    logger.info(
+        "Calling backend /agent/turn (mode=%s, session_id=%s)",
+        mode,
+        session_id,
     )
+    resp = requests.post(f"{BACKEND_URL}/agent/turn", json=payload, timeout=300)
+    resp.raise_for_status()
+    data = resp.json()
+
+    reply = data.get("reply", "")
+    tool_result = data.get("tool_result")
+    return reply, tool_result
 
 
 # ------------------------------
 # Helper: render a tool_result as table / JSON
 # ------------------------------
+def _approval_key(tool_id: str, args: Dict[str, Any]) -> Tuple[str, str]:
+    return tool_id, json.dumps(args or {}, sort_keys=True, ensure_ascii=False)
+
+
+def fetch_tools_from_backend():
+    """
+    Fetch OpenAI-style tools and registry metadata from the backend.
+    """
+    url = f"{BACKEND_URL}/tools"
+    logger.info("Fetching tools from backend: %s", url)
+
+    try:
+        resp = requests.get(url, timeout=30)
+    except Exception as e:
+        logger.exception("Request to /tools failed: %s", e)
+        st.error("Could not reach the backend /tools endpoint. "
+                 "Check that the backend is running and BACKEND_URL is correct.")
+        st.stop()
+
+    if not resp.ok:
+        logger.error(
+            "Backend /tools returned %s: %s",
+            resp.status_code,
+            resp.text[:500],
+        )
+        st.error(
+            f"Backend /tools failed with status {resp.status_code}. "
+            "See backend logs for details."
+        )
+        st.stop()
+
+    try:
+        data = resp.json()
+    except ValueError as e:
+        logger.exception("Failed to decode JSON from /tools: %s", e)
+        st.error("Backend /tools did not return valid JSON. See backend logs.")
+        st.stop()
+
+    tools = data.get("tools") or []
+    registry = data.get("registry") or {}
+
+    if not isinstance(tools, list):
+        logger.error("Unexpected tools payload type from /tools: %r", type(tools))
+        st.error("Backend /tools returned tools in an unexpected format.")
+        st.stop()
+
+    if not isinstance(registry, dict):
+        logger.error("Unexpected registry payload type from /tools: %r", type(registry))
+        st.error("Backend /tools returned registry in an unexpected format.")
+        st.stop()
+
+    logger.info(
+        "Loaded %d tools and %d registry entries from backend",
+        len(tools),
+        len(registry),
+    )
+    return tools, registry
+
+
 def render_tool_result(tr: dict):
     if not tr or not isinstance(tr, dict):
         return
@@ -146,7 +242,10 @@ def render_tool_result(tr: dict):
 # ------------------------------
 # Streamlit UI
 # ------------------------------
-st.set_page_config(page_title="FES Control Center", page_icon=None)
+st.set_page_config(page_title="FES Assistant", page_icon=None)
+
+# Enforce idle timeout for this Streamlit session
+check_ui_session_timeout()
 
 st.markdown(
     """
@@ -165,11 +264,31 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("FES Control Center")
+st.title("FES Assistant")
 st.markdown(
     "<p style='font-size: 0.95rem; opacity: 0.85;'>Powered by the FES Agent (MCP + PySisense)</p>",
     unsafe_allow_html=True,
 )
+
+# If the session was reset due to inactivity, show a short message once
+if st.session_state.get("session_expired"):
+    st.info(
+        "Your session was idle for a long time, so it was reset. "
+        "Please reconnect your Sisense deployment to continue."
+    )
+    # Clear the flag so it only appears once
+    del st.session_state["session_expired"]
+
+
+# ------------------------------
+# Per-session id (one per browser tab)
+# ------------------------------
+SESSION_ID_KEY = "fes_session_id"
+if SESSION_ID_KEY not in st.session_state:
+    st.session_state[SESSION_ID_KEY] = str(uuid.uuid4())
+    logger.info("Initialized new UI session: %s", st.session_state[SESSION_ID_KEY])
+
+session_id = st.session_state[SESSION_ID_KEY]
 
 # ------------------------------
 # Global Privacy & Controls
@@ -190,14 +309,15 @@ with st.sidebar:
         ),
     )
 
-# Push the toggle into the client on every rerun
-chat_client.ALLOW_SUMMARIZATION = allow
-
 # ------------------------------
 # Mode selection: Chat vs Migration
 # ------------------------------
 MODE_CHAT = "Chat with deployment"
 MODE_MIGRATION = "Migrate between deployments"
+
+# Backend-facing mode labels
+BACKEND_MODE_CHAT = "chat"
+BACKEND_MODE_MIGRATION = "migration"
 
 mode = st.radio(
     "Mode",
@@ -206,17 +326,16 @@ mode = st.radio(
     label_visibility="collapsed",
 )
 
-
 logger.info("Current mode: %s", mode)
 
 # ------------------------------
-# Load tools for LLM once (shared for both modes)
+# Load tools once (for display/metadata)
 # ------------------------------
-if "tools" not in st.session_state:
-    st.session_state.tools = load_tools_for_llm()
+if "tools" not in st.session_state or "tool_registry" not in st.session_state:
+    tools, registry = fetch_tools_from_backend()
+    st.session_state.tools = tools
+    st.session_state.tool_registry = registry
 
-    # Full registry tool names
-    registry = getattr(chat_client, "TOOL_REGISTRY", {})
     logger.info(
         "Loaded TOOL_REGISTRY with %d tools: %s",
         len(registry),
@@ -224,14 +343,14 @@ if "tools" not in st.session_state:
     )
 
     logger.info(
-        "Tools selected for LLM (all modes): %d tools: %s",
+        "Tools fetched from backend (for display/metadata): %d tools: %s",
         len(st.session_state.tools),
         [t["function"]["name"] for t in st.session_state.tools],
     )
 
-# Derive per-mode tool subsets once registry + tools are available
+
 if "chat_tools" not in st.session_state or "migration_tools" not in st.session_state:
-    registry = getattr(chat_client, "TOOL_REGISTRY", {})
+    registry = st.session_state.tool_registry
     all_tools = st.session_state.tools
     tools_by_name = {t["function"]["name"]: t for t in all_tools}
 
@@ -257,7 +376,7 @@ if "chat_tools" not in st.session_state or "migration_tools" not in st.session_s
     ]
 
     logger.info(
-        "Per-mode tools computed: chat_tools=%d, migration_tools=%d",
+        "Per-mode tools (for display): chat_tools=%d, migration_tools=%d",
         len(st.session_state.chat_tools),
         len(st.session_state.migration_tools),
     )
@@ -330,21 +449,20 @@ if mode == MODE_CHAT:
     # We now know tenant is configured
     chat_tenant_config = st.session_state[CHAT_TENANT_KEY]
 
-    # Session state init for chat messages
+    # Session state init for chat messages.
+    # NOTE: System prompts now live in the backend; this history is purely
+    # for UI display and giving the backend prior turns if/when needed.
     if CHAT_MESSAGES_KEY not in st.session_state:
-        system_prompt = (
-            "You are a strict Sisense analytics assistant.\n"
-            "You will rely only on data returned by tools and NEVER invent users, "
-            "emails, dashboard names, or other objects.\n"
-        )
         st.session_state[CHAT_MESSAGES_KEY] = [
-            {"role": "system", "content": system_prompt},
             {
                 "role": "assistant",
                 "content": "Hi! Ask me about your Sisense deployment.",
             },
         ]
-        logger.info("[CHAT] System prompt initialized:\n%s", system_prompt)
+        logger.info(
+            "[CHAT] Chat history initialized with greeting only "
+            "(system prompt handled in backend)."
+        )
 
     # Track last user turn index and a one-shot hide flag for the approved request
     if CHAT_LAST_USER_IDX_KEY not in st.session_state:
@@ -415,11 +533,11 @@ if mode == MODE_CHAT:
     for i, msg in enumerate(st.session_state[CHAT_MESSAGES_KEY]):
         if msg["role"] not in ("user", "assistant"):
             continue
-        if (
-            st.session_state[CHAT_HIDE_USER_IDX_KEY] is not None
-            and i == st.session_state[CHAT_HIDE_USER_IDX_KEY]
-        ):
-            continue
+        # if (
+        #     st.session_state[CHAT_HIDE_USER_IDX_KEY] is not None
+        #     and i == st.session_state[CHAT_HIDE_USER_IDX_KEY]
+        # ):
+        #     continue
         with st.chat_message(msg["role"]):
             # For assistant turns, render result first, then the narrative summary
             if msg["role"] == "assistant":
@@ -448,8 +566,6 @@ if mode == MODE_CHAT:
         cols = st.columns([1, 1])
         with cols[0]:
             if st.button("Approve", type="primary"):
-                from chatbot.client import _approval_key  # reuse helper
-
                 key = _approval_key(
                     pending["tool_id"], pending.get("arguments", {})
                 )
@@ -458,14 +574,17 @@ if mode == MODE_CHAT:
                 # Run the just-approved operation using the same conversation state
                 with st.spinner("Running approved action..."):
                     try:
-                        reply = run_turn_once(
-                            st.session_state[CHAT_MESSAGES_KEY],
-                            "",
-                            chat_tools,
+                        reply, tr = call_backend_turn(
+                            messages=st.session_state[CHAT_MESSAGES_KEY],
+                            user_input="",
                             tenant_config=chat_tenant_config,  # MULTITENANT
                             approved_keys=st.session_state[CHAT_APPROVED_KEY],
                             migration_config=None,
+                            session_id=session_id,
+                            allow_summarization=st.session_state["allow_summarization"],
+                            mode=BACKEND_MODE_CHAT,
                         )
+
                     except Exception as e:
                         logger.exception("Agent run after approval failed: %s", e)
                         st.error("The approved action failed.")
@@ -473,9 +592,6 @@ if mode == MODE_CHAT:
                         # Clear pending and stop
                         st.session_state[CHAT_PENDING_KEY] = None
                         st.rerun()
-
-                # Fetch the latest tool result set by the client
-                tr = getattr(chat_client, "LAST_TOOL_RESULT", None)
 
                 # Append assistant result to history
                 st.session_state[CHAT_MESSAGES_KEY].append(
@@ -527,22 +643,22 @@ if mode == MODE_CHAT:
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 try:
-                    reply = run_turn_once(
-                        st.session_state[CHAT_MESSAGES_KEY],
-                        user_input,
-                        chat_tools,
+                    reply, tr = call_backend_turn(
+                        messages=st.session_state[CHAT_MESSAGES_KEY],
+                        user_input=user_input,
                         tenant_config=chat_tenant_config,  # MULTITENANT
                         approved_keys=None,  # first pass: no approvals
                         migration_config=None,
+                        session_id=session_id,
+                        allow_summarization=st.session_state["allow_summarization"],
+                        mode=BACKEND_MODE_CHAT,
                     )
                 except Exception as e:
                     logger.exception("LLM+tools call failed: %s", e)
                     st.error("Sorry, something went wrong while calling the agent.")
                     st.exception(e)
                     reply = f"Error: {e}"
-
-            # Grab the latest tool result from the client module
-            tr = getattr(chat_client, "LAST_TOOL_RESULT", None)
+                    tr = None
 
             # If the client is asking for confirmation, show the approval sheet and store it
             if isinstance(tr, dict) and tr.get("pending_confirmation"):
@@ -562,22 +678,24 @@ if mode == MODE_CHAT:
                 cols = st.columns([1, 1])
                 with cols[0]:
                     if st.button("Approve", type="primary"):
-                        from chatbot.client import _approval_key
-
-                        key = _approval_key(pc["tool_id"], pc.get("arguments", {}))
+                        key = _approval_key(
+                            pc["tool_id"], pc.get("arguments", {})
+                        )
                         st.session_state[CHAT_APPROVED_KEY].add(key)
 
                         with st.spinner("Running approved action..."):
                             try:
-                                reply2 = run_turn_once(
-                                    st.session_state[CHAT_MESSAGES_KEY],
-                                    user_input,
-                                    chat_tools,
+                                reply2, tr2 = call_backend_turn(
+                                    messages=st.session_state[CHAT_MESSAGES_KEY],
+                                    user_input=user_input,
                                     tenant_config=chat_tenant_config,  # MULTITENANT
                                     approved_keys=st.session_state[
                                         CHAT_APPROVED_KEY
                                     ],
                                     migration_config=None,
+                                    session_id=session_id,
+                                    allow_summarization=st.session_state["allow_summarization"],
+                                    mode=BACKEND_MODE_CHAT,
                                 )
                             except Exception as e:
                                 logger.exception(
@@ -588,10 +706,9 @@ if mode == MODE_CHAT:
                                 st.session_state[CHAT_PENDING_KEY] = None
                                 st.rerun()
 
-                        tr2 = getattr(chat_client, "LAST_TOOL_RESULT", None)
-
                         # Show only the final result now
-                        render_tool_result(tr2)
+                        if tr2:
+                            render_tool_result(tr2)
                         st.markdown("**Summary**")
                         st.markdown(reply2)
 
@@ -639,6 +756,7 @@ if mode == MODE_CHAT:
                         "tool_result": tr,
                     }
                 )
+
 
 # ======================================================================
 # MODE 2: MIGRATE BETWEEN DEPLOYMENTS
@@ -808,14 +926,7 @@ if mode == MODE_MIGRATION:
 
     # Migration chat session state
     if MIG_MESSAGES_KEY not in st.session_state:
-        system_prompt_mig = (
-            "You are a Sisense migration assistant.\n"
-            "You help the user migrate assets between a source and a target "
-            "Sisense deployment. You will rely only on data returned by tools "
-            "and never invent users, emails, dashboard names, or other objects.\n"
-        )
         st.session_state[MIG_MESSAGES_KEY] = [
-            {"role": "system", "content": system_prompt_mig},
             {
                 "role": "assistant",
                 "content": (
@@ -824,7 +935,10 @@ if mode == MODE_MIGRATION:
                 ),
             },
         ]
-        logger.info("[MIGRATION] System prompt initialized:\n%s", system_prompt_mig)
+        logger.info(
+            "[MIGRATION] Chat history initialized with greeting only "
+            "(system prompt handled in backend)."
+        )
 
     if MIG_LAST_USER_IDX_KEY not in st.session_state:
         st.session_state[MIG_LAST_USER_IDX_KEY] = None
@@ -870,8 +984,6 @@ if mode == MODE_MIGRATION:
         cols = st.columns([1, 1])
         with cols[0]:
             if st.button("Approve migration", type="primary"):
-                from chatbot.client import _approval_key
-
                 key = _approval_key(
                     pending_mig["tool_id"],
                     pending_mig.get("arguments", {}),
@@ -880,13 +992,15 @@ if mode == MODE_MIGRATION:
 
                 with st.spinner("Running approved migration action..."):
                     try:
-                        reply = run_turn_once(
-                            st.session_state[MIG_MESSAGES_KEY],
-                            "",
-                            migration_tools,
+                        reply, tr = call_backend_turn(
+                            messages=st.session_state[MIG_MESSAGES_KEY],
+                            user_input="",
                             tenant_config=None,
                             approved_keys=st.session_state[MIG_APPROVED_KEY],
                             migration_config=migration_config,
+                            session_id=session_id,
+                            allow_summarization=st.session_state["allow_summarization"],
+                            mode=BACKEND_MODE_MIGRATION,
                         )
                     except Exception as e:
                         logger.exception(
@@ -896,8 +1010,6 @@ if mode == MODE_MIGRATION:
                         st.exception(e)
                         st.session_state[MIG_PENDING_KEY] = None
                         st.rerun()
-
-                tr = getattr(chat_client, "LAST_TOOL_RESULT", None)
 
                 st.session_state[MIG_MESSAGES_KEY].append(
                     {
@@ -938,13 +1050,15 @@ if mode == MODE_MIGRATION:
         with st.chat_message("assistant"):
             with st.spinner("Planning migration..."):
                 try:
-                    reply = run_turn_once(
-                        st.session_state[MIG_MESSAGES_KEY],
-                        mig_input,
-                        migration_tools,
+                    reply, tr = call_backend_turn(
+                        messages=st.session_state[MIG_MESSAGES_KEY],
+                        user_input=mig_input,
                         tenant_config=None,
                         approved_keys=None,
                         migration_config=migration_config,
+                        session_id=session_id,
+                        allow_summarization=st.session_state["allow_summarization"],
+                        mode=BACKEND_MODE_MIGRATION,
                     )
                 except Exception as e:
                     logger.exception("Migration LLM+tools call failed: %s", e)
@@ -953,8 +1067,7 @@ if mode == MODE_MIGRATION:
                     )
                     st.exception(e)
                     reply = f"Error: {e}"
-
-            tr = getattr(chat_client, "LAST_TOOL_RESULT", None)
+                    tr = None
 
             if isinstance(tr, dict) and tr.get("pending_confirmation"):
                 st.session_state[MIG_PENDING_KEY] = tr["pending_confirmation"]
@@ -973,22 +1086,24 @@ if mode == MODE_MIGRATION:
                 cols = st.columns([1, 1])
                 with cols[0]:
                     if st.button("Approve migration", type="primary"):
-                        from chatbot.client import _approval_key
-
-                        key = _approval_key(pc["tool_id"], pc.get("arguments", {}))
+                        key = _approval_key(
+                            pc["tool_id"], pc.get("arguments", {})
+                        )
                         st.session_state[MIG_APPROVED_KEY].add(key)
 
                         with st.spinner("Running approved migration action..."):
                             try:
-                                reply2 = run_turn_once(
-                                    st.session_state[MIG_MESSAGES_KEY],
-                                    mig_input,
-                                    migration_tools,
+                                reply2, tr2 = call_backend_turn(
+                                    messages=st.session_state[MIG_MESSAGES_KEY],
+                                    user_input=mig_input,
                                     tenant_config=None,
                                     approved_keys=st.session_state[
                                         MIG_APPROVED_KEY
                                     ],
                                     migration_config=migration_config,
+                                    session_id=session_id,
+                                    allow_summarization=st.session_state["allow_summarization"],
+                                    mode=BACKEND_MODE_MIGRATION,
                                 )
                             except Exception as e:
                                 logger.exception(
@@ -999,9 +1114,8 @@ if mode == MODE_MIGRATION:
                                 st.session_state[MIG_PENDING_KEY] = None
                                 st.rerun()
 
-                        tr2 = getattr(chat_client, "LAST_TOOL_RESULT", None)
-
-                        render_tool_result(tr2)
+                        if tr2:
+                            render_tool_result(tr2)
                         st.markdown("**Summary**")
                         st.markdown(reply2)
 

@@ -1,13 +1,20 @@
+# Core helpers for the PySisense tool server.
+# This file knows how to:
+# - load the tool registry
+# - build Sisense SDK clients from inline domain/token/ssl
+# - route tool_id + arguments into the right SDK method
+# - return a normalized payload for callers (HTTP, MCP, etc.)
+
 import json
 import logging
 import os
 import inspect
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from logging.handlers import RotatingFileHandler
 
 import urllib3
 from dotenv import load_dotenv
-from mcp.server.fastmcp import FastMCP
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 load_dotenv()
@@ -15,6 +22,7 @@ load_dotenv()
 # -----------------------------------------------------------------------------
 # Logging
 # -----------------------------------------------------------------------------
+# Core logging for the PySisense tool server. HTTP layer will have its own logger.
 log_level = "debug"  # change to "info", "warning", etc. as needed
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -22,23 +30,29 @@ LOG_DIR = ROOT_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
 logger = logging.getLogger("mcp_server")
-
 level = getattr(logging, log_level.upper(), logging.INFO)
 logger.setLevel(level)
 logger.propagate = False
 
-# ensure a single FileHandler to logs/mcp_server.log
-if not any(isinstance(h, logging.FileHandler) for h in logger.handlers):
-    fh = logging.FileHandler(LOG_DIR / "mcp_server.log", encoding="utf-8")
+if not any(isinstance(h, RotatingFileHandler) for h in logger.handlers):
+    fh = RotatingFileHandler(
+        LOG_DIR / "mcp_server.log",
+        maxBytes=10 * 1024 * 1024,  # 10 MB per file
+        backupCount=5,              # keep 5 old files
+        encoding="utf-8",
+    )
     fh.setLevel(level)
-    fmt = logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
+    fmt = logging.Formatter(
+        "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+    )
     fh.setFormatter(fmt)
     logger.addHandler(fh)
 
-logger.info("mcp_server logger initialized at level %s", log_level.upper())
+logger.info("mcp_server core logger initialized at level %s", log_level.upper())
 
 
 def _log_json_truncated(label: str, obj: Any, max_chars: int = 2000) -> None:
+    """Small helper to log JSON or plain text without flooding the log file."""
     try:
         text = json.dumps(obj, indent=2, default=str)
     except Exception:
@@ -50,18 +64,16 @@ def _log_json_truncated(label: str, obj: Any, max_chars: int = 2000) -> None:
 
 def _scrub_secrets(obj: Any) -> Any:
     """
-    Recursively redact sensitive fields like tokens from logs.
+    Recursively redact obvious secrets (tokens, passwords) from log output.
     """
     if isinstance(obj, dict):
         cleaned = {}
         for k, v in obj.items():
             key_l = k.lower()
-
-            # Redact any key that looks like a token / auth field
             if (
-                "token" in key_l                       # token, source_token, target_token, etc.
-                or key_l in ("api-key", "apikey")      # variants
-                or "authorization" in key_l            # authorization header
+                "token" in key_l
+                or key_l in ("api-key", "apikey")
+                or "authorization" in key_l
                 or key_l in ("auth", "password", "passwd", "secret")
             ):
                 cleaned[k] = "***REDACTED***"
@@ -104,9 +116,12 @@ audit_logger.propagate = False
 if not any(isinstance(h, logging.FileHandler) for h in audit_logger.handlers):
     audit_fh = logging.FileHandler(LOG_DIR / "server_mutations.log", encoding="utf-8")
     audit_fh.setLevel(level)
-    audit_fmt = logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
+    audit_fmt = logging.Formatter(
+        "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+    )
     audit_fh.setFormatter(audit_fmt)
     audit_logger.addHandler(audit_fh)
+
 
 # -----------------------------------------------------------------------------
 # SDK imports / init
@@ -130,6 +145,7 @@ logger.info(
 )
 
 SUPPORTED_MODULES = ["access", "dashboard", "datamodel", "migration", "wellcheck"]
+
 
 # -----------------------------------------------------------------------------
 # Registry load / normalize
@@ -190,6 +206,7 @@ logger.info("  Skipped (ALLOW_MODULES) : %d", skipped_module_filter)
 
 
 def _one_liner(txt: Optional[str]) -> str:
+    """Return the first non-empty line from a longer description."""
     if not txt:
         return "No description."
     return txt.strip().splitlines()[0]
@@ -226,7 +243,7 @@ def _extract_tenant_from_arguments(arguments: Dict[str, Any]) -> Dict[str, Any]:
     else:
         logger.error(
             "Missing tenant domain/token in arguments. "
-            "Make sure the front-end passes domain, token, and ssl for each tool call."
+            "Make sure the client passes domain, token, and ssl for each tool call."
         )
         raise RuntimeError(
             "Tenant domain and token are required for SisenseClient.from_connection."
@@ -240,7 +257,7 @@ def _extract_migration_tenants_from_arguments(
     """
     Pull source/target tenant info for migration tools.
 
-    Expected keys (to be supplied by the migration UI / client layer):
+    Expected keys:
       - source_domain, source_token, source_ssl
       - target_domain, target_token, target_ssl
 
@@ -289,7 +306,7 @@ def _build_sisense_client(tenant: Dict[str, Any]) -> SisenseClient:
     """
     Build a SisenseClient for this tenant using inline connection info.
 
-    We NEVER write config.yaml here; we always call SisenseClient.from_connection.
+    We do not write config.yaml here; we always call SisenseClient.from_connection.
     """
     if not tenant.get("domain") or not tenant.get("token"):
         raise RuntimeError("Tenant domain and token are required for SisenseClient.")
@@ -339,7 +356,7 @@ def _call_tool(tool_id: str, arguments: Dict[str, Any]) -> Any:
     - Extract tenant info (domain, token, ssl) from arguments
       OR source/target tenants for migration
     - Find module + method
-    - Invoke the corresponding pysisense method
+    - Invoke the corresponding PySisense method
     """
     logger.info("Dispatching tool call: tool_id=%s", tool_id)
     _log_json_truncated("Incoming arguments", _scrub_secrets(arguments))
@@ -412,7 +429,9 @@ def _call_tool(tool_id: str, arguments: Dict[str, Any]) -> Any:
                     coerced[k] = json.loads(vs)
                     continue
                 except Exception:
-                    logger.debug("Failed to JSON-parse argument %s; using raw string.", k)
+                    logger.debug(
+                        "Failed to JSON-parse argument %s; using raw string.", k
+                    )
         coerced[k] = v
 
     func = getattr(inst, method)
@@ -467,17 +486,13 @@ def _call_tool(tool_id: str, arguments: Dict[str, Any]) -> Any:
 
 
 # -----------------------------------------------------------------------------
-# FastMCP server + tools
+# Public helpers used by HTTP (and any other front-end)
 # -----------------------------------------------------------------------------
-mcp = FastMCP("pysisense-mcp")
-
-
-@mcp.tool()
-def health() -> Dict[str, Any]:
+def health_summary() -> Dict[str, Any]:
     """
-    Basic health and summary info about the pysisense MCP server.
+    Basic health and summary info about the PySisense tool server.
     """
-    logger.info("MCP tool 'health' called.")
+    logger.info("health_summary called.")
     payload = {
         "ok": True,
         "modules": sorted(SUPPORTED_MODULES),
@@ -489,15 +504,16 @@ def health() -> Dict[str, Any]:
     return payload
 
 
-@mcp.tool()
 def list_tools(
     module: Optional[str] = None,
     tag: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     List available tools from the registry.
+
+    Filter by module and/or tag if supplied.
     """
-    logger.info("MCP tool 'list_tools' called with module=%s, tag=%s", module, tag)
+    logger.info("list_tools called with module=%s, tag=%s", module, tag)
     out: List[Dict[str, Any]] = []
     for tid, row in TOOLS_BY_ID.items():
         if module and row.get("module") != module:
@@ -523,17 +539,18 @@ def list_tools(
     return out
 
 
-@mcp.tool()
 def invoke_tool(tool_id: str, arguments: Dict[str, Any] = {}) -> Dict[str, Any]:
     """
     Invoke a specific PySisense tool by tool_id.
+
+    This wraps _call_tool and normalizes the output into a standard payload.
     """
-    logger.info("MCP tool 'invoke_tool' called for tool_id=%s", tool_id)
+    logger.info("invoke_tool called for tool_id=%s", tool_id)
     _log_json_truncated("invoke_tool arguments", _scrub_secrets(arguments))
+
     try:
         result = _call_tool(tool_id, arguments or {})
 
-        # Default payload
         payload: Dict[str, Any] = {
             "tool_id": tool_id,
             "ok": True,
@@ -544,7 +561,6 @@ def invoke_tool(tool_id: str, arguments: Dict[str, Any] = {}) -> Dict[str, Any]:
         # result is a list of columns with a boolean "used" flag.
         if tool_id == "access.get_unused_columns" and isinstance(result, list):
             total_columns = len(result)
-
             used_count = 0
             unused_count = 0
 
@@ -569,6 +585,7 @@ def invoke_tool(tool_id: str, arguments: Dict[str, Any] = {}) -> Dict[str, Any]:
 
         _log_json_truncated("invoke_tool success payload", payload)
         return payload
+
     except Exception as e:
         logger.exception("Error invoking tool %s", tool_id)
         err_payload = {
@@ -579,14 +596,3 @@ def invoke_tool(tool_id: str, arguments: Dict[str, Any] = {}) -> Dict[str, Any]:
         }
         _log_json_truncated("invoke_tool error payload", err_payload)
         return err_payload
-
-
-logger.info(
-    "pysisense MCP server initialized. Modules=%s, tools=%d",
-    sorted(SUPPORTED_MODULES),
-    len(TOOLS_BY_ID),
-)
-
-if __name__ == "__main__":
-    logger.info("Starting MCP server (stdio transport)")
-    mcp.run(transport="stdio")

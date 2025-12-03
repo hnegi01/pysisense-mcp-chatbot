@@ -86,11 +86,11 @@ echo
 # ------------------------------------------------------------
 echo "[3/3] Building tool registry and examples..."
 
-echo "  → Running: python -m scripts.build_registry"
-python -m scripts.build_registry
+echo "  → Running: python -m scripts.01_build_registry_from_sdk"
+python -m scripts.01_build_registry_from_sdk
 
-echo "  → Running: python -m scripts.generate_examples"
-python -m scripts.generate_examples
+echo "  → Running: python -m scripts.02_add_llm_examples_to_registry"
+python -m scripts.02_add_llm_examples_to_registry
 
 echo
 echo "Generated files:"
