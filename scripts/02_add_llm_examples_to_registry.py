@@ -8,9 +8,6 @@ from typing import Any, Dict, List
 
 import requests
 from dotenv import load_dotenv
-import urllib3
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # -----------------------------------------------------------------------------
 # Logging
@@ -253,7 +250,6 @@ def call_llm(prompt: str, max_retries: int = 5, base_delay: float = 2.0) -> str:
             headers=HEADERS,
             json=payload,
             timeout=60,
-            verify=False,  # local POC
         )
 
         if resp.status_code == 200:

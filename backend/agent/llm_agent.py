@@ -1,35 +1,55 @@
+'''
+High-level LLM + tools orchestration for the FES assistant.
+- Loads the PySisense tool registry and exposes tools to the LLM.
+- Talks to the LLM provider (Azure OpenAI or Databricks).
+- Orchestrates: planning -> MCP tool calls -> summarisation.
+- Handles mutation approvals and an optional "no summarisation" privacy mode.
+
+Note: The `messages` argument to call_llm_with_tools is the FULL
+      conversation history from the UI (user + assistant only).
+      Right now, planning and summarisation only use the latest
+      user message, but we keep the full history so we can
+      support multi-step flows in the future.
+'''
 import os
 import json
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
+import asyncio
 
-import requests
-import urllib3
+
+import httpx
 from dotenv import load_dotenv
 
-from chatbot.mcp_client import McpClient
+from .mcp_client import McpClient
+from logging.handlers import RotatingFileHandler
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 load_dotenv(override=True)
 
 # -----------------------------------------------------------------------------
 # Logging
 # -----------------------------------------------------------------------------
-log_level = "debug"  # change to "info", "warning", etc. as needed
+log_level = "debug"  # change to "info", "warning", etc. as you like
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
+ROOT_DIR = Path(__file__).resolve().parents[2]
 LOG_DIR = ROOT_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
-logger = logging.getLogger("client")
+logger = logging.getLogger("backend.agent.llm_agent")
 
 level = getattr(logging, log_level.upper(), logging.INFO)
 logger.setLevel(level)
 logger.propagate = False
 
-if not any(isinstance(h, logging.FileHandler) for h in logger.handlers):
-    fh = logging.FileHandler(LOG_DIR / "client.log", encoding="utf-8")
+if not any(isinstance(h, RotatingFileHandler) for h in logger.handlers):
+    fh = RotatingFileHandler(
+        LOG_DIR / "llm_agent.log",
+        maxBytes=10 * 1024 * 1024,  # 10 MB per file
+        backupCount=5,              # keep 5 old files
+        encoding="utf-8",
+    )
     fh.setLevel(level)
     fmt = logging.Formatter(
         "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
@@ -37,7 +57,13 @@ if not any(isinstance(h, logging.FileHandler) for h in logger.handlers):
     fh.setFormatter(fmt)
     logger.addHandler(fh)
 
-logger.info("client logger initialized at level %s", log_level.upper())
+logger.info("llm_agent logger initialized at level %s", log_level.upper())
+
+# -----------------------------------------------------------------------------
+# HTTP retry config for LLM calls
+# -----------------------------------------------------------------------------
+MAX_LLM_HTTP_RETRIES = int(os.getenv("LLM_HTTP_MAX_RETRIES", "3"))
+LLM_HTTP_RETRY_BASE_DELAY = float(os.getenv("LLM_HTTP_RETRY_BASE_DELAY", "0.5"))
 
 
 def _require(var: str) -> str:
@@ -57,22 +83,24 @@ ALLOW_MUTATING_TOOLS = True
 REQUIRE_MUTATION_CONFIRM = True
 
 # -----------------------------------------------------------------------------
-# Summarization controls (data exposure to LLM)
+# Summarisation controls (data exposure to LLM)
 # -----------------------------------------------------------------------------
-# If False, tool results (data) will NOT be sent to the LLM for summarization.
-# The planning call is still allowed, but the follow-up summarization call is skipped.
+# If False, tool results (data) will NOT be sent to the LLM for summarisation.
+# The planning call is still allowed, but the follow-up summarisation call is skipped.
 # Default comes from env var ALLOW_SUMMARIZATION (true/false), falling back to True.
 ALLOW_SUMMARIZATION = os.getenv("ALLOW_SUMMARIZATION", "true").strip().lower() == "true"
 logger.info("ALLOW_SUMMARIZATION=%s", ALLOW_SUMMARIZATION)
 
 # Separate audit logger for mutations
-audit_logger = logging.getLogger("client.mutations")
+audit_logger = logging.getLogger("backend.agent.llm_agent.mutations")
 audit_logger.setLevel(level)
 audit_logger.propagate = False
 if not any(isinstance(h, logging.FileHandler) for h in audit_logger.handlers):
     audit_fh = logging.FileHandler(LOG_DIR / "mutations.log", encoding="utf-8")
     audit_fh.setLevel(level)
-    audit_fmt = logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
+    audit_fmt = logging.Formatter(
+        "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+    )
     audit_fh.setFormatter(audit_fmt)
     audit_logger.addHandler(audit_fh)
 
@@ -117,7 +145,14 @@ else:
 # -----------------------------------------------------------------------------
 # Registry + globals
 # -----------------------------------------------------------------------------
-REGISTRY_PATH = Path("config/tools.registry.with_examples.json")
+# Project root is ROOT_DIR (pysisense_chatbot/)
+# Default registry path under config/, but allow an env override.
+_registry_env = os.getenv("PYSISENSE_REGISTRY_PATH")
+
+if _registry_env:
+    REGISTRY_PATH = Path(_registry_env)
+else:
+    REGISTRY_PATH = ROOT_DIR / "config" / "tools.registry.with_examples.json"
 
 TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {}
 LAST_TOOL_RESULT: Optional[Dict[str, Any]] = None
@@ -143,7 +178,7 @@ def _load_registry() -> List[Dict[str, Any]]:
 def load_tools_for_llm() -> List[Dict[str, Any]]:
     """
     Load tools from the registry and convert to OpenAI-style tools
-    for LLM. Includes all tools when ALLOW_MUTATING_TOOLS is True,
+    for the LLM. Includes all tools when ALLOW_MUTATING_TOOLS is True,
     otherwise only non-mutating tools.
     """
     global TOOL_REGISTRY
@@ -196,7 +231,7 @@ def load_tools_for_llm() -> List[Dict[str, Any]]:
             skipped_mutating,
         )
 
-    # Optional: cap at 80 for Azure, 32 for Databricks
+    # Optional: cap at 80 for Azure, 32 for Databricks if needed.
     MAX_TOOLS = 80
     if len(tools) > MAX_TOOLS:
         logger.info(
@@ -225,13 +260,16 @@ def _log_json_truncated(title: str, obj: Any, max_len: int = 2000) -> None:
     logger.debug("%s:\n%s", title, text)
 
 
-def call_llm_raw(
+async def call_llm_raw(
     messages: List[Dict[str, Any]],
     tools: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     Single LLM call. If tools are provided, enable tool calling.
     Does NOT execute tools, just returns the raw response dict.
+
+    Includes simple retry logic with exponential backoff on transient
+    HTTP errors (network issues, 429, 5xx).
     """
     payload: Dict[str, Any] = {
         "messages": messages,
@@ -246,7 +284,6 @@ def call_llm_raw(
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
 
-    # ---- Logging: payload / prompt ----
     logger.info("=== call_llm_raw START ===")
     try:
         msg_roles = [m.get("role") for m in messages]
@@ -260,32 +297,88 @@ def call_llm_raw(
     )
     _log_json_truncated("LLM request payload", payload)
 
-    try:
-        resp = requests.post(
-            INVOCATIONS_URL,
-            headers=HEADERS,
-            json=payload,
-            timeout=60,
-            verify=False,
-        )
-    except Exception as e:
-        logger.exception("Error making HTTP request to LLM: %s", e)
-        raise
+    resp: Optional[httpx.Response] = None
+    last_exc: Optional[Exception] = None
 
-    if resp.status_code != 200:
-        # Log detailed info for debugging 400/500s from LLMs
+    for attempt in range(1, MAX_LLM_HTTP_RETRIES + 1):
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.post(
+                    INVOCATIONS_URL,
+                    headers=HEADERS,
+                    json=payload,
+                )
+        except httpx.RequestError as e:
+            # Network / connection / timeout errors
+            last_exc = e
+            logger.warning(
+                "LLM HTTP request error on attempt %d/%d: %s",
+                attempt,
+                MAX_LLM_HTTP_RETRIES,
+                e,
+            )
+            if attempt == MAX_LLM_HTTP_RETRIES:
+                logger.info("=== call_llm_raw END (HTTP error after retries) ===")
+                raise
+
+            delay = LLM_HTTP_RETRY_BASE_DELAY * (2 ** (attempt - 1))
+            logger.info("Retrying LLM call in %.2f seconds...", delay)
+            await asyncio.sleep(delay)
+            continue
+
+        # We got a response – decide whether to retry based on status code.
+        if resp.status_code == 200:
+            break
+
+        # Retry on transient codes: 429, 5xx
+        if resp.status_code in (429, 500, 502, 503, 504):
+            body_preview = resp.text[:500] if resp.text is not None else ""
+            logger.warning(
+                "LLM call failed with status %s on attempt %d/%d; "
+                "will retry if attempts remain. Body (truncated): %s",
+                resp.status_code,
+                attempt,
+                MAX_LLM_HTTP_RETRIES,
+                body_preview,
+            )
+
+            if attempt == MAX_LLM_HTTP_RETRIES:
+                logger.error(
+                    "Exceeded max retries for LLM call; raising HTTPStatusError."
+                )
+                logger.info("=== call_llm_raw END (ERROR after retries) ===")
+                resp.raise_for_status()
+
+            delay = LLM_HTTP_RETRY_BASE_DELAY * (2 ** (attempt - 1))
+            logger.info("Retrying LLM call in %.2f seconds...", delay)
+            await asyncio.sleep(delay)
+            continue
+
+        # Non-retryable HTTP error (e.g. 400, 401, 403, 404, etc.)
+        body_preview = resp.text[:1000] if resp.text is not None else ""
         logger.error(
-            "LLM call failed with status %s\nResponse body (truncated): %s",
+            "LLM call failed with non-retryable status %s\n"
+            "Response body (truncated): %s",
             resp.status_code,
-            resp.text[:1000],
+            body_preview,
         )
         if tools:
             logger.debug(
                 "Tools in failing request: %s",
                 [t["function"]["name"] for t in tools],
             )
-        logger.info("=== call_llm_raw END (ERROR) ===")
+        logger.info("=== call_llm_raw END (ERROR non-retryable) ===")
         resp.raise_for_status()
+
+    # At this point, resp should be 200 from a successful attempt.
+    if resp is None:
+        # Extremely unlikely, but keeps mypy / type checkers happy
+        logger.error(
+            "LLM call failed without response and without raising; last_exc=%s",
+            last_exc,
+        )
+        logger.info("=== call_llm_raw END (no response object) ===")
+        raise RuntimeError("LLM call failed without a response object")
 
     try:
         data = resp.json()
@@ -302,7 +395,9 @@ def call_llm_raw(
 # -----------------------------------------------------------------------------
 # Fallback helper
 # -----------------------------------------------------------------------------
-async def _fallback_direct_tool(user_text: str, mcp_client: McpClient):
+async def _fallback_direct_tool(
+    user_text: str, mcp_client: McpClient
+) -> Tuple[str, Dict[str, Any]]:
     """
     If the planning LLM call fails (400, etc.), pick a reasonable tool
     directly from the text and run it without LLM.
@@ -363,7 +458,7 @@ async def _fallback_direct_tool(user_text: str, mcp_client: McpClient):
 
 
 # -----------------------------------------------------------------------------
-# LLM + tools orchestration
+# LLM + tools orchestration prompts
 # -----------------------------------------------------------------------------
 PLANNING_SYSTEM_PROMPT = """
 You are a planning assistant for a Sisense tool-calling agent.
@@ -400,8 +495,39 @@ Additional guidance for dependencies:
 - Otherwise, only include the specific dependency types the user mentions.
 """.strip()
 
+# Mode-specific high-level role prompts
+CHAT_MODE_SYSTEM_PROMPT = """
+You are a strict Sisense analytics assistant.
 
-SUMMARY_SYSTEM_PROMPT = """
+You are helping the user explore and manage a single Sisense deployment
+using read and write tools exposed via MCP. You must rely only on data
+returned by tools and NEVER invent users, emails, dashboard names,
+datamodel names, or any other objects.
+""".strip()
+
+MIGRATION_MODE_SYSTEM_PROMPT = """
+You are a Sisense migration assistant.
+
+You are helping the user migrate assets between a source Sisense deployment
+and a target Sisense deployment using migration tools exposed via MCP.
+You must rely only on data returned by tools and NEVER invent users, emails,
+dashboard names, datamodel names, or any other objects.
+""".strip()
+
+# Additional short context for planning, per mode
+CHAT_PLANNING_CONTEXT_PROMPT = """
+The user is working with a single Sisense deployment (chat mode).
+When selecting tools, assume there is exactly one active deployment configured.
+""".strip()
+
+MIGRATION_PLANNING_CONTEXT_PROMPT = """
+The user is working in migration mode with a configured source and target
+Sisense deployment. Prefer tools that read from the source and/or write
+into the target to migrate users, groups, datamodels, and dashboards.
+""".strip()
+
+# Base summary rules (shared between chat + migration)
+SUMMARY_SYSTEM_PROMPT_BASE = """
 You are a Sisense analytics assistant.
 
 You are given:
@@ -422,26 +548,59 @@ Rules:
 - If you don't know something from the tool result, say you don't know instead of guessing.
 """.strip()
 
+SUMMARY_SYSTEM_PROMPT_CHAT = (
+    CHAT_MODE_SYSTEM_PROMPT + "\n\n" + SUMMARY_SYSTEM_PROMPT_BASE
+)
+
+SUMMARY_SYSTEM_PROMPT_MIGRATION = (
+    MIGRATION_MODE_SYSTEM_PROMPT + "\n\n" + SUMMARY_SYSTEM_PROMPT_BASE
+)
+
 
 def _approval_key(tool_id: str, args: Dict[str, Any]) -> Tuple[str, str]:
     """Stable key for approval matching: (tool_id, normalized_args_json)."""
     return tool_id, json.dumps(args or {}, sort_keys=True, ensure_ascii=False)
 
 
+def _infer_mode_from_tools(tools: List[Dict[str, Any]]) -> str:
+    """
+    Best-effort inference of mode ("chat" | "migration") based on tool metadata.
+
+    We assume:
+    - Migration mode => tools' registry entries have module == "migration".
+    - Chat mode => everything else (default).
+    """
+    try:
+        for tool in tools or []:
+            fn = tool.get("function") or {}
+            name = fn.get("name")
+            meta = TOOL_REGISTRY.get(name) or {}
+            module = meta.get("module")
+            if module == "migration":
+                return "migration"
+    except Exception:
+        pass
+    return "chat"
+
+
 async def call_llm_with_tools(
-    messages: List[Dict[str, Any]],
+    messages: List[Dict[str, Any]],  # full UI history (user + assistant turns)
     tools: List[Dict[str, Any]],
     mcp_client: McpClient,
     approved_mutations: Optional[Set[Tuple[str, str]]] = None,
+    allow_summarization: Optional[bool] = None,
 ) -> str:
     """
     High-level helper:
-    - Planning call: LLM + tools with PLANNING_SYSTEM_PROMPT.
+    - Planning call: LLM + tools with PLANNING_SYSTEM_PROMPT
+      plus a mode-specific planning context (chat vs migration).
     - If it asks to call a tool, execute via MCP (with safety for mutating tools).
-    - Summarisation call: LLM without tools with SUMMARY_SYSTEM_PROMPT,
+    - Summarisation call: LLM without tools with a mode-specific summary
+      system prompt (chat vs migration) built on SUMMARY_SYSTEM_PROMPT_BASE,
       but ONLY if ALLOW_SUMMARIZATION is True. When False, no tool results
       are sent to the LLM and a simple local summary is returned.
-    - If planning or summarisation fails, fall back to simple Python summary.
+    - If planning or summarisation fails, fall back to a direct tool call
+      or a simple summary.
 
     UI integration for mutations:
     - If a mutating tool is selected and REQUIRE_MUTATION_CONFIRM is True,
@@ -449,12 +608,27 @@ async def call_llm_with_tools(
       LAST_TOOL_RESULT = {"ok": False, "pending_confirmation": {...}}
       and returns a short message for the UI.
     - The UI should re-call this function with `approved_mutations` containing
-      the (tool_id, normalized_args_json) tuple to authorize execution.
+      the (tool_id, normalized_args_json) tuple to authorise execution.
     """
     global LAST_TOOL_RESULT
 
     if approved_mutations is None:
         approved_mutations = set()
+
+    # Per-call override for summarization; fall back to global default
+    if allow_summarization is None:
+        allow_summarization_flag = ALLOW_SUMMARIZATION
+    else:
+        allow_summarization_flag = allow_summarization
+
+    # Infer mode from tools (chat vs migration) so we can pick the right prompts
+    mode = _infer_mode_from_tools(tools)
+    logger.info(
+        "call_llm_with_tools: mode=%s, allow_summarization=%s (global default=%s)",
+        mode,
+        allow_summarization_flag,
+        ALLOW_SUMMARIZATION,
+    )
 
     logger.info("=== call_llm_with_tools START ===")
     logger.debug(
@@ -467,7 +641,10 @@ async def call_llm_with_tools(
     # Reset last tool result at the start of every run
     LAST_TOOL_RESULT = None
 
-    # ----- find last user -----
+    # ----- find last user (from FULL history) -----
+    # NOTE: messages is the full chat history from the UI. Today, the planner
+    #       and summariser only use the latest user message, but keeping the
+    #       full history here will let us add multi-step flows later.
     latest_user_message = None
     for m in reversed(messages):
         if m.get("role") == "user":
@@ -479,22 +656,30 @@ async def call_llm_with_tools(
     # ======================================================================
     # 1) PLANNING CALL (with tools)
     # ======================================================================
+    if mode == "migration":
+        planning_context = MIGRATION_PLANNING_CONTEXT_PROMPT
+    else:
+        planning_context = CHAT_PLANNING_CONTEXT_PROMPT
+
     planning_messages = [
         {"role": "system", "content": PLANNING_SYSTEM_PROMPT},
+        {"role": "system", "content": planning_context},
         latest_user_message,
     ]
     _log_json_truncated("Planning messages", planning_messages)
 
     try:
-        data = call_llm_raw(planning_messages, tools=tools)
+        data = await call_llm_raw(planning_messages, tools=tools)
         choice = data["choices"][0]
         message = choice["message"]
-    except requests.HTTPError as e:
+    except httpx.HTTPStatusError as e:
         logger.warning(
             "Planning LLM call failed with HTTPError (%s). Falling back to direct tool.",
             e,
         )
-        summary, result = await _fallback_direct_tool(latest_user_message["content"], mcp_client)
+        summary, result = await _fallback_direct_tool(
+            latest_user_message["content"], mcp_client
+        )
         LAST_TOOL_RESULT = result
         logger.info("=== call_llm_with_tools END (fallback after planning error) ===")
         return summary
@@ -586,7 +771,6 @@ async def call_llm_with_tools(
                         if not isinstance(row, dict):
                             continue
                         light = {}
-                        # Use at most MAX_COLS_FOR_LLM columns
                         for i, (k, v) in enumerate(row.items()):
                             if i >= MAX_COLS_FOR_LLM:
                                 break
@@ -613,11 +797,9 @@ async def call_llm_with_tools(
     # ======================================================================
     # 3) SUMMARISATION CALL (no tools) OR LOCAL SUMMARY IF DISABLED
     # ======================================================================
-    if not ALLOW_SUMMARIZATION:
-        # Summarization to external LLM is disabled: do NOT send tool results
-        # to the model. Return a simple local status message instead.
+    if not allow_summarization_flag:
         logger.info(
-            "Summarization is disabled (ALLOW_SUMMARIZATION=False); "
+            "Summarisation is disabled (ALLOW_SUMMARIZATION=False); "
             "skipping LLM summary call."
         )
 
@@ -635,35 +817,41 @@ async def call_llm_with_tools(
         if row_count is not None and last_tool_name:
             final_content = (
                 f"I successfully ran the tool `{last_tool_name}` and got **{row_count}** rows. "
-                "Summarization to an external LLM is disabled by configuration, so no data "
+                "Summarisation to an external LLM is disabled by configuration, so no data "
                 "was sent to the LLM and only this basic status message is available. If you "
-                "want to enable summarization, please toggle the setting in the Privacy & Controls section."
+                "want to enable summarisation, please toggle the setting in the Privacy & Controls section."
             )
         elif last_tool_name:
             final_content = (
                 f"I successfully ran the tool `{last_tool_name}`. "
-                "Summarization to an external LLM is disabled by configuration, so no data "
+                "Summarisation to an external LLM is disabled by configuration, so no data "
                 "was sent to the LLM and only this basic status message is available. If you "
-                "want to enable summarization, please toggle the setting in the Privacy & Controls section."
+                "want to enable summarisation, please toggle the setting in the Privacy & Controls section."
             )
         else:
             final_content = (
                 "I successfully ran the requested tool(s). "
-                "Summarization to an external LLM is disabled by configuration, so no data "
+                "Summarisation to an external LLM is disabled by configuration, so no data "
                 "was sent to the LLM and only this basic status message is available. If you "
-                "want to enable summarization, please toggle the setting in the Privacy & Controls section."
+                "want to enable summarisation, please toggle the setting in the Privacy & Controls section."
             )
 
         logger.info(
-            "Final assistant summary (local-only, summarization disabled):\n%s",
+            "Final assistant summary (local-only, summarisation disabled):\n%s",
             final_content,
         )
-        logger.info("=== call_llm_with_tools END (summarization disabled) ===")
+        logger.info("=== call_llm_with_tools END (summarisation disabled) ===")
         return final_content
 
-    # If summarization is allowed, proceed with the existing LLM follow-up call
+    # Mode-specific summary prompt
+    if mode == "migration":
+        summary_system_prompt = SUMMARY_SYSTEM_PROMPT_MIGRATION
+    else:
+        summary_system_prompt = SUMMARY_SYSTEM_PROMPT_CHAT
+
+    # If summarisation is allowed, proceed with follow-up call
     followup_messages = [
-        {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
+        {"role": "system", "content": summary_system_prompt},
         latest_user_message,
         message,
     ] + tool_messages_for_llm
@@ -671,11 +859,11 @@ async def call_llm_with_tools(
     _log_json_truncated("Summarisation prompt messages", followup_messages)
 
     try:
-        followup = call_llm_raw(followup_messages, tools=None)
+        followup = await call_llm_raw(followup_messages, tools=None)
         final_msg = followup["choices"][0]["message"]
         final_content = final_msg.get("content", "")
         logger.debug("Summarisation LLM message:\n%s", final_content)
-    except requests.HTTPError as e:
+    except httpx.HTTPStatusError as e:
         logger.warning(
             "Summarisation LLM call failed with HTTPError (%s). Falling back to simple summary.",
             e,
