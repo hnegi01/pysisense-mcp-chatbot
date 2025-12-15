@@ -5,32 +5,54 @@ FastAPI HTTP API for the FES Assistant backend.
 - Loads the shared PySisense tool registry via llm_agent and selects tools per mode (chat/migration).
 - Bridges UI requests into backend.runtime.run_turn_once and returns the LLM reply + last tool result.
 """
-
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+# -----------------------------------------------------------------------------
+# Env loading (local/dev only; safe for Docker/prod)
+# -----------------------------------------------------------------------------
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+
+
+if load_dotenv is not None:
+    env_path = ROOT_DIR / ".env"
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path, override=True)
+
 import logging
+from logging.handlers import RotatingFileHandler
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from backend.runtime import run_turn_once
 import backend.agent.llm_agent as chat_client
 from backend.agent import llm_agent as llm_tool
-from logging.handlers import RotatingFileHandler
 
 
 # -----------------------------------------------------------------------------
 # Logging (dedicated file for backend API)
 # -----------------------------------------------------------------------------
-log_level = "debug"  # change to "info", "warning", etc. as needed
+LOG_LEVEL_ENV_VAR = "FES_LOG_LEVEL"
+DEFAULT_LOG_LEVEL = "INFO"
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
+log_level_name = os.getenv(LOG_LEVEL_ENV_VAR, DEFAULT_LOG_LEVEL).upper()
+log_level = getattr(logging, log_level_name, logging.INFO)
+
 LOG_DIR = ROOT_DIR / "logs"
-LOG_DIR.mkdir(exist_ok=True)
+try:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+except FileExistsError:
+    pass
 
 logger = logging.getLogger("backend.api")
-level = getattr(logging, log_level.upper(), logging.INFO)
-logger.setLevel(level)
+logger.setLevel(log_level)
 logger.propagate = False
 
 if not any(isinstance(h, RotatingFileHandler) for h in logger.handlers):
@@ -40,14 +62,32 @@ if not any(isinstance(h, RotatingFileHandler) for h in logger.handlers):
         backupCount=5,              # keep 5 old files
         encoding="utf-8",
     )
-    fh.setLevel(level)
+    fh.setLevel(log_level)
     fmt = logging.Formatter(
         "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
     )
     fh.setFormatter(fmt)
     logger.addHandler(fh)
 
-logger.info("backend.api logger initialized at level %s", log_level.upper())
+logger.info(
+    "backend.api logger initialized at level %s (env %s)",
+    log_level_name,
+    LOG_LEVEL_ENV_VAR,
+)
+
+# -----------------------------------------------------------------------------
+# Summarization policy (backend enforcement)
+# -----------------------------------------------------------------------------
+ALLOW_SUMMARIZATION_TOGGLE_ENV_VAR = "FES_ALLOW_SUMMARIZATION_TOGGLE"
+ALLOW_SUMMARIZATION_TOGGLE = os.getenv(
+    ALLOW_SUMMARIZATION_TOGGLE_ENV_VAR, "true"
+).lower() == "true"
+
+logger.info(
+    "Summarization toggle allowed (backend): %s (env %s)",
+    ALLOW_SUMMARIZATION_TOGGLE,
+    ALLOW_SUMMARIZATION_TOGGLE_ENV_VAR,
+)
 
 
 # -----------------------------------------------------------------------------
@@ -130,7 +170,7 @@ class AgentTurnRequest(BaseModel):
     # Long-lived session identifier from the UI
     session_id: str
 
-    # per-turn summarization flag from the UI
+    # Per-turn summarization flag from the UI
     allow_summarization: Optional[bool] = None
 
     # Logical mode: "chat" or "migration" (default "chat" for older clients)
@@ -185,7 +225,6 @@ def list_tools() -> Dict[str, Any]:
             "module": meta.get("module"),
             "mutates": meta.get("mutates", False),
             "description": meta.get("description"),
-            # add other simple JSON-safe fields if needed
         }
 
     return {"tools": tools, "registry": registry_public}
@@ -202,9 +241,19 @@ async def agent_turn(payload: AgentTurnRequest) -> AgentTurnResponse:
     # Select tools based on mode (chat vs migration) + registry metadata.
     selected_tools = _select_tools_for_mode(payload.mode)
 
+    # User's requested flag (from UI or any client)
+    user_flag = bool(payload.allow_summarization) if payload.allow_summarization is not None else False
+
+    # Apply deployment-level policy: if toggle is disabled, force False
+    if not ALLOW_SUMMARIZATION_TOGGLE:
+        effective_allow = False
+    else:
+        effective_allow = user_flag
+
     logger.info(
         "Received /agent/turn: messages=%d, mode=%s, tools_for_mode=%d, "
-        "tenant=%s, migration=%s, approvals=%d, session_id=%s, allow_summarization=%s",
+        "tenant=%s, migration=%s, approvals=%d, session_id=%s, "
+        "allow_summarization=%s, effective_allow_summarization=%s",
         len(payload.messages),
         payload.mode,
         len(selected_tools),
@@ -212,14 +261,12 @@ async def agent_turn(payload: AgentTurnRequest) -> AgentTurnResponse:
         bool(payload.migration_config),
         len(payload.approved_keys or []),
         payload.session_id,
-        payload.allow_summarization,
+        user_flag,
+        effective_allow,
     )
 
     try:
-        if payload.approved_keys:
-            approved_set: Optional[set[Tuple[str, str]]] = set(payload.approved_keys)
-        else:
-            approved_set = set()
+        approved_set: set[Tuple[str, str]] = set(payload.approved_keys or [])
 
         reply = await run_turn_once(
             messages=payload.messages,
@@ -229,7 +276,7 @@ async def agent_turn(payload: AgentTurnRequest) -> AgentTurnResponse:
             approved_keys=approved_set,
             migration_config=payload.migration_config,
             session_id=payload.session_id,
-            allow_summarization=payload.allow_summarization,
+            allow_summarization=effective_allow,
         )
 
         tool_result = getattr(chat_client, "LAST_TOOL_RESULT", None)

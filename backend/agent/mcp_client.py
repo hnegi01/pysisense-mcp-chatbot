@@ -1,6 +1,6 @@
-# Thin HTTP client for the PySisense MCP server.
-# - Talks to the MCP HTTP server (FastAPI) instead of spawning a stdio process.
-# - Still injects tenant / migration credentials into each tool call.
+# - Thin HTTP client for the PySisense MCP server.
+# - Talks to the MCP Server (Streamable HTTP JSON-RPC).
+# - Injects tenant / migration credentials into each tool call.
 # - Used by the LLM agent to call: health, list_tools, invoke_tool.
 
 import json
@@ -11,23 +11,23 @@ from typing import Any, Dict, List, Optional
 from logging.handlers import RotatingFileHandler
 import asyncio
 
-
 import httpx
 
 # -----------------------------------------------------------------------------
 # Logging
 # -----------------------------------------------------------------------------
-log_level = "debug"  # change to "info", "warning", etc. as needed
+LOG_LEVEL_ENV_VAR = "FES_LOG_LEVEL"
+DEFAULT_LOG_LEVEL = "INFO"
 
+log_level_name = os.getenv(LOG_LEVEL_ENV_VAR, DEFAULT_LOG_LEVEL).upper()
+log_level = getattr(logging, log_level_name, logging.INFO)
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 LOG_DIR = ROOT_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
 logger = logging.getLogger("backend.agent.mcp_client")
-
-level = getattr(logging, log_level.upper(), logging.INFO)
-logger.setLevel(level)
+logger.setLevel(log_level)
 logger.propagate = False
 
 if not any(isinstance(h, RotatingFileHandler) for h in logger.handlers):
@@ -37,19 +37,21 @@ if not any(isinstance(h, RotatingFileHandler) for h in logger.handlers):
         backupCount=5,              # keep 5 old files
         encoding="utf-8",
     )
-    fh.setLevel(level)
-    fmt = logging.Formatter(
-        "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
-    )
+    fh.setLevel(log_level)
+    fmt = logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
     fh.setFormatter(fmt)
     logger.addHandler(fh)
 
-logger.info("mcp_client logger initialized at level %s", log_level.upper())
+logger.info(
+    "mcp_client logger initialized at level %s (env %s)",
+    log_level_name,
+    LOG_LEVEL_ENV_VAR,
+)
 
 # -----------------------------------------------------------------------------
 # HTTP retry config for MCP → tools server calls
 # -----------------------------------------------------------------------------
-MAX_MCP_HTTP_RETRIES = int(os.getenv("MCP_HTTP_MAX_RETRIES", "3"))
+MAX_MCP_HTTP_RETRIES = int(os.getenv("MCP_HTTP_MAX_RETRIES", "1"))
 MCP_HTTP_RETRY_BASE_DELAY = float(os.getenv("MCP_HTTP_RETRY_BASE_DELAY", "0.5"))
 
 # -----------------------------------------------------------------------------
@@ -104,11 +106,9 @@ class McpClient:
     """
     Minimal MCP client that talks to the PySisense MCP HTTP server.
 
-    It does not spawn a subprocess. Instead it sends HTTP requests to:
-
+    This client uses Streamable HTTP JSON-RPC over:
+      - POST /mcp    (JSON-RPC methods: initialize, tools/list, tools/call, etc.)
       - GET  /health
-      - GET  /tools
-      - POST /tools/{tool_id}
 
     MULTITENANT (chat mode):
     - Accepts an optional tenant_config dict: {"domain": str, "token": str, "ssl": bool}
@@ -134,10 +134,9 @@ class McpClient:
         tenant_config: Optional[Dict[str, Any]] = None,
         migration_config: Optional[Dict[str, Any]] = None,
     ):
-        # Base URL of the MCP HTTP server (FastAPI)
+        # Base URL of the MCP HTTP server
         self._base_url = (
-            base_url
-            or os.getenv("PYSISENSE_MCP_HTTP_URL", "http://localhost:8002")
+            base_url or os.getenv("PYSISENSE_MCP_HTTP_URL", "http://localhost:8002")
         ).rstrip("/")
 
         # Basic HTTP timeout in seconds
@@ -147,6 +146,22 @@ class McpClient:
         self._tenant_config: Dict[str, Any] = tenant_config or {}
         # Migration mode source + target
         self._migration_config: Dict[str, Any] = migration_config or {}
+
+        # MCP protocol version (client side)
+        self._mcp_protocol_version = os.getenv(
+            "MCP_PROTOCOL_VERSION", "2025-11-25"
+        ).strip()
+
+        # MCP session id - optional
+        self._mcp_session_id: Optional[str] = None
+
+        # Initialization lifecycle
+        self._initialized: bool = False
+        self._init_lock = asyncio.Lock()
+
+        # JSON-RPC id counter
+        self._id_lock = asyncio.Lock()
+        self._next_id: int = 1
 
         logger.info("McpClient HTTP initialized with base_url=%s", self._base_url)
 
@@ -172,24 +187,30 @@ class McpClient:
             )
 
     # ------------------------------------------------------------------
-    # Connection management (no-op for HTTP)
+    # Connection management (initialize MCP lifecycle)
     # ------------------------------------------------------------------
     async def connect(self) -> None:
         """
-        For HTTP mode there is nothing to start. This method is kept for
-        interface compatibility with the old stdio client.
+        Initialize the MCP session lifecycle (initialize + notifications/initialized).
+        Kept for interface compatibility with the old client.
         """
-        logger.debug("McpClient.connect() called (HTTP mode, no-op).")
+        await self._ensure_initialized()
 
     async def close(self) -> None:
         """
-        For HTTP mode there is nothing to tear down.
+        For V1 JSON-only MCP over HTTP there is nothing to tear down.
         """
         logger.debug("McpClient.close() called (HTTP mode, no-op).")
 
     # ------------------------------------------------------------------
-    # Internal HTTP helper (async)
+    # Internal: JSON-RPC id helper
     # ------------------------------------------------------------------
+    async def _new_id(self) -> int:
+        async with self._id_lock:
+            rid = self._next_id
+            self._next_id += 1
+            return rid
+
     # ------------------------------------------------------------------
     # Internal HTTP helper (async)
     # ------------------------------------------------------------------
@@ -200,6 +221,7 @@ class McpClient:
         *,
         params: Optional[Dict[str, Any]] = None,
         json_body: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
     ) -> Any:
         """
         Perform an async HTTP request to the MCP server and return
@@ -209,12 +231,18 @@ class McpClient:
         transient HTTP errors (network issues, 429, 5xx).
         """
         url = f"{self._base_url}{path}"
+
+        hdrs = dict(headers or {})
+        if self._mcp_session_id and "Mcp-Session-Id" not in hdrs:
+            hdrs["Mcp-Session-Id"] = self._mcp_session_id
+
         logger.debug(
-            "HTTP %s %s params=%s json=%s",
+            "HTTP %s %s params=%s json=%s headers=%s",
             method,
             url,
             params,
             _scrub_secrets(json_body) if json_body else None,
+            hdrs,
         )
 
         resp: Optional[httpx.Response] = None
@@ -228,9 +256,9 @@ class McpClient:
                         url=url,
                         params=params,
                         json=json_body,
+                        headers=hdrs if hdrs else None,
                     )
             except httpx.RequestError as exc:
-                # Network / connection / timeout errors
                 last_exc = exc
                 logger.warning(
                     "MCP HTTP request error on attempt %d/%d for %s %s: %s",
@@ -251,11 +279,16 @@ class McpClient:
                 await asyncio.sleep(delay)
                 continue
 
-            # If we got a response, decide whether to retry based on status code
+            # Capture session id if the server provides it (optional)
+            if resp is not None:
+                sid = resp.headers.get("Mcp-Session-Id")
+                if sid and sid != self._mcp_session_id:
+                    self._mcp_session_id = sid
+                    logger.info("Captured Mcp-Session-Id from server response.")
+
             if 200 <= resp.status_code < 300:
                 break
 
-            # Retry on transient status codes
             if resp.status_code in (429, 500, 502, 503, 504):
                 body_preview = resp.text[:500] if resp.text is not None else ""
                 logger.warning(
@@ -280,7 +313,6 @@ class McpClient:
                 await asyncio.sleep(delay)
                 continue
 
-            # Non-retryable HTTP error (4xx other than 429, etc.)
             body_preview = resp.text[:1000] if resp.text is not None else ""
             logger.error(
                 "MCP call %s %s failed with non-retryable status %s. "
@@ -293,7 +325,6 @@ class McpClient:
             resp.raise_for_status()
 
         if resp is None:
-            # Extremely defensive; should not happen
             logger.error(
                 "MCP HTTP call failed without a response object; last_exc=%s",
                 last_exc,
@@ -307,6 +338,98 @@ class McpClient:
 
         _log_json_truncated("HTTP response JSON", data)
         return data
+
+    # ------------------------------------------------------------------
+    # MCP JSON-RPC helpers
+    # ------------------------------------------------------------------
+    def _mcp_headers(self) -> Dict[str, str]:
+        # Clients should advertise both JSON and SSE support even if we only use JSON in V1 currently
+        return {
+            "Accept": "application/json, text/event-stream",
+            "Content-Type": "application/json",
+            "MCP-Protocol-Version": self._mcp_protocol_version,
+        }
+
+    async def _rpc_call(self, method: str, params: Optional[Dict[str, Any]] = None) -> Any:
+        """
+        Send a JSON-RPC request (with id) and return the `result` or raise on `error`.
+        """
+        rid = await self._new_id()
+        msg: Dict[str, Any] = {
+            "jsonrpc": "2.0",
+            "id": rid,
+            "method": method,
+        }
+        if params is not None:
+            msg["params"] = params
+
+        _log_json_truncated("JSON-RPC request", msg)
+
+        data = await self._request(
+            "POST",
+            "/mcp/",  # use trailing slash to avoid 307 redirects
+            json_body=msg,
+            headers=self._mcp_headers(),
+        )
+
+        if not isinstance(data, dict):
+            raise RuntimeError(f"Invalid JSON-RPC response type: {type(data).__name__}")
+
+        if "error" in data and data["error"] is not None:
+            raise RuntimeError(f"JSON-RPC error: {data['error']}")
+
+        # Normal JSON-RPC response path
+        return data.get("result")
+
+    async def _rpc_notify(self, method: str, params: Optional[Dict[str, Any]] = None) -> None:
+        """
+        Send a JSON-RPC notification (no id). Server should respond 202 with no body.
+        """
+        msg: Dict[str, Any] = {
+            "jsonrpc": "2.0",
+            "method": method,
+        }
+        if params is not None:
+            msg["params"] = params
+
+        _log_json_truncated("JSON-RPC notification", msg)
+
+        await self._request(
+            "POST",
+            "/mcp/",
+            json_body=msg,
+            headers=self._mcp_headers(),
+        )
+
+    async def _ensure_initialized(self) -> None:
+        """
+        Ensure MCP lifecycle is complete: initialize -> notifications/initialized.
+        """
+        if self._initialized:
+            return
+
+        async with self._init_lock:
+            if self._initialized:
+                return
+
+            logger.info("Initializing MCP session via JSON-RPC initialize...")
+
+            init_params = {
+                "protocolVersion": self._mcp_protocol_version,
+                "capabilities": {
+                    "roots": {"listChanged": True},
+                    "sampling": {},
+                },
+                "clientInfo": {"name": "PySisense MCP Client", "version": "1.0.0"},
+            }
+
+            _ = await self._rpc_call("initialize", init_params)
+
+            # After initialize, client must send notifications/initialized
+            await self._rpc_notify("notifications/initialized")
+
+            self._initialized = True
+            logger.info("MCP session initialized (V1 JSON-only).")
 
     # ------------------------------------------------------------------
     # Internal helpers: inject credentials
@@ -326,24 +449,12 @@ class McpClient:
             if key in self._tenant_config and key not in merged:
                 merged[key] = self._tenant_config[key]
 
-        _log_json_truncated(
-            "invoke_tool arguments with tenant", _scrub_secrets(merged)
-        )
+        _log_json_truncated("invoke_tool arguments with tenant", _scrub_secrets(merged))
         return merged
 
     def _with_migration(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """
         Merge migration_config into arguments for migration tools.
-
-        Expects migration_config of the form:
-          {
-            "source": {"domain": str, "token": str, "ssl": bool},
-            "target": {"domain": str, "token": str, "ssl": bool},
-          }
-
-        Injects:
-          source_domain, source_token, source_ssl,
-          target_domain, target_token, target_ssl
         """
         if not self._migration_config:
             return arguments
@@ -408,61 +519,78 @@ class McpClient:
         tag: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Call the MCP server /tools endpoint.
+        Call MCP JSON-RPC: tools/list, then apply optional filters client-side.
         """
-        params: Dict[str, Any] = {}
+        await self._ensure_initialized()
+
+        logger.info("Calling MCP JSON-RPC: tools/list")
+        result = await self._rpc_call("tools/list", {})
+
+        tools: List[Dict[str, Any]] = []
+        if isinstance(result, dict) and isinstance(result.get("tools"), list):
+            tools = result["tools"]
+        elif isinstance(result, list):
+            tools = result
+        else:
+            logger.warning("tools/list returned unexpected payload; returning [].")
+            return []
+
         if module:
-            params["module"] = module
+            tools = [t for t in tools if isinstance(t, dict) and t.get("module") == module]
         if tag:
-            params["tag"] = tag
+            tools = [
+                t
+                for t in tools
+                if isinstance(t, dict)
+                and isinstance(t.get("tags"), list)
+                and tag in t.get("tags")
+            ]
 
-        logger.info("Calling MCP HTTP: GET /tools with params=%s", params)
-        data = await self._request("GET", "/tools", params=params)
-
-        if isinstance(data, list):
-            logger.debug("MCP /tools returned %d tools", len(data))
-            return data
-
-        logger.warning("MCP /tools returned non-list payload; returning [].")
-        return []
+        logger.debug("tools/list returned %d tools (after filters)", len(tools))
+        return tools
 
     async def invoke_tool(
         self,
         tool_id: str,
         arguments: Dict[str, Any],
     ) -> Dict[str, Any]:
+        print("BACKEND: McpClient.invoke_tool called for", tool_id)
         """
-        Call the MCP server /tools/{tool_id} endpoint.
+        Call MCP JSON-RPC: tools/call.
 
         - For standard tools (non-migration), `tenant_config` (domain, token, ssl)
           is merged into arguments.
         - For migration tools (tool_id starting with "migration."), `migration_config`
           (source/target) is merged into arguments as source_* / target_* keys.
         """
-        # Inject appropriate credentials for the tool
+        await self._ensure_initialized()
+
         arguments_with_creds = self._inject_credentials(tool_id, arguments)
 
-        payload = {"arguments": arguments_with_creds}
-        logger.info("Calling MCP HTTP: POST /tools/%s", tool_id)
-        _log_json_truncated("invoke_tool HTTP payload", _scrub_secrets(payload))
+        logger.info("Calling MCP JSON-RPC: tools/call name=%s", tool_id)
+        _log_json_truncated("tools/call arguments", _scrub_secrets(arguments_with_creds))
 
-        data = await self._request(
-            "POST",
-            f"/tools/{tool_id}",
-            json_body=payload,
+        result = await self._rpc_call(
+            "tools/call",
+            {"name": tool_id, "arguments": arguments_with_creds},
         )
 
-        # Server returns a dict like {"tool_id": ..., "ok": ..., "result": ...}
-        if isinstance(data, dict):
-            logger.debug(
-                "invoke_tool(%s) HTTP returned dict with keys: %s",
-                tool_id,
-                list(data.keys()),
-            )
-            return data
+        # Our MCP server returns TextContent with a JSON string payload.
+        # We parse and return the underlying dict to preserve the old contract.
+        if isinstance(result, dict) and isinstance(result.get("content"), list):
+            content = result.get("content") or []
+            if content and isinstance(content[0], dict) and content[0].get("type") == "text":
+                text = content[0].get("text")
+                if isinstance(text, str):
+                    try:
+                        parsed = json.loads(text)
+                        if isinstance(parsed, dict):
+                            return parsed
+                        return {"tool_id": tool_id, "result": parsed}
+                    except Exception:
+                        return {"tool_id": tool_id, "result": text}
 
-        logger.warning(
-            "invoke_tool(%s) HTTP returned non-dict payload; wrapping in simple dict.",
-            tool_id,
-        )
-        return {"tool_id": tool_id, "result": data}
+        # Fallback if server result shape changes
+        if isinstance(result, dict):
+            return {"tool_id": tool_id, "result": result}
+        return {"tool_id": tool_id, "result": result}

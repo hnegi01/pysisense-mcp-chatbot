@@ -16,29 +16,33 @@ Note:
 
 import asyncio
 import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from logging.handlers import RotatingFileHandler
+
 from backend.agent.llm_agent import call_llm_with_tools
 from backend.agent.mcp_client import McpClient
-from logging.handlers import RotatingFileHandler
 
 
 # -----------------------------------------------------------------------------
 # Logging
 # -----------------------------------------------------------------------------
-log_level = "debug"  # change to "info", "warning", etc. as needed
+LOG_LEVEL_ENV_VAR = "FES_LOG_LEVEL"
+DEFAULT_LOG_LEVEL = "INFO"
+
+log_level_name = os.getenv(LOG_LEVEL_ENV_VAR, DEFAULT_LOG_LEVEL).upper()
+log_level = getattr(logging, log_level_name, logging.INFO)
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 LOG_DIR = ROOT_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
 logger = logging.getLogger("backend.runtime")
-
-level = getattr(logging, log_level.upper(), logging.INFO)
-logger.setLevel(level)
+logger.setLevel(log_level)
 logger.propagate = False
 
 if not any(isinstance(h, RotatingFileHandler) for h in logger.handlers):
@@ -48,15 +52,18 @@ if not any(isinstance(h, RotatingFileHandler) for h in logger.handlers):
         backupCount=5,              # keep 5 old files
         encoding="utf-8",
     )
-    fh.setLevel(level)
+    fh.setLevel(log_level)
     fmt = logging.Formatter(
         "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
     )
     fh.setFormatter(fmt)
     logger.addHandler(fh)
 
-
-logger.info("backend.runtime logger initialized at level %s", log_level.upper())
+logger.info(
+    "backend.runtime logger initialized at level %s (env %s)",
+    log_level_name,
+    LOG_LEVEL_ENV_VAR,
+)
 
 
 # -----------------------------------------------------------------------------
@@ -189,12 +196,13 @@ async def _run_turn_once_async(
 
     logger.info("=== _run_turn_once_async START (session_id=%s) ===", session_id)
     logger.debug(
-        "Inputs: messages=%d, tools=%d, tenant_config=%s, migration_config=%s, approvals=%d",
+        "Inputs: messages=%d, tools=%d, tenant_config=%s, migration_config=%s, approvals=%d, allow_summarization=%s",
         len(messages),
         len(tools),
         bool(tenant_config),
         bool(migration_config),
         len(approved_keys),
+        allow_summarization,
     )
 
     # Get or create a long-lived McpClient for this session
@@ -266,6 +274,7 @@ async def run_turn_once(
         Migration mode source/target config.
     allow_summarization:
         Per-turn override for whether tool results can be sent to the LLM.
+        If None, llm_agent will fall back to its global ALLOW_SUMMARIZATION setting.
 
     Returns
     -------

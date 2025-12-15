@@ -1,6 +1,5 @@
 # Env / secrets
 .env
-.env.* 
 
 # Logs
 logs/
@@ -29,18 +28,8 @@ venv_pysisense_chatbot/
 .idea/
 .DS_Store
 
-# Old scratch files
-old_*.py
-old_*.json
-
 # Local lint/config artifacts
 .flake8
 
 # Local docs clone (pysisense repo)
 docs_src/
-
-#extra files
-sisense_mcp_flow.md
-
-# Yaml
-*.yaml

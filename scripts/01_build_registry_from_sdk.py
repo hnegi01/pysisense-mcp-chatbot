@@ -406,6 +406,7 @@ _READ_PREFIXES = (
     "preview_",
     "show_",
     "check_",
+    "describe_",
 )
 
 _MUTATE_PREFIXES = (
