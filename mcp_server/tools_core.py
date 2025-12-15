@@ -9,50 +9,66 @@ import json
 import logging
 import os
 import inspect
+import copy
+import asyncio
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from logging.handlers import RotatingFileHandler
 
 import urllib3
-from dotenv import load_dotenv
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-load_dotenv()
 
 # -----------------------------------------------------------------------------
 # Logging
 # -----------------------------------------------------------------------------
-# Core logging for the PySisense tool server. HTTP layer will have its own logger.
-log_level = "debug"  # change to "info", "warning", etc. as needed
+LOG_LEVEL_ENV_VAR = "FES_LOG_LEVEL"
+DEFAULT_LOG_LEVEL = "INFO"
+
+log_level_name = os.getenv(LOG_LEVEL_ENV_VAR, DEFAULT_LOG_LEVEL).upper()
+log_level = getattr(logging, log_level_name, logging.INFO)
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 LOG_DIR = ROOT_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
 logger = logging.getLogger("mcp_server")
-level = getattr(logging, log_level.upper(), logging.INFO)
-logger.setLevel(level)
+logger.setLevel(log_level)
 logger.propagate = False
 
 if not any(isinstance(h, RotatingFileHandler) for h in logger.handlers):
     fh = RotatingFileHandler(
-        LOG_DIR / "mcp_server.log",
-        maxBytes=10 * 1024 * 1024,  # 10 MB per file
-        backupCount=5,              # keep 5 old files
+        LOG_DIR / "tools_core.log",
+        maxBytes=10 * 1024 * 1024,
+        backupCount=5,
         encoding="utf-8",
     )
-    fh.setLevel(level)
-    fmt = logging.Formatter(
-        "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
-    )
+    fh.setLevel(log_level)
+    fmt = logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
     fh.setFormatter(fmt)
     logger.addHandler(fh)
 
-logger.info("mcp_server core logger initialized at level %s", log_level.upper())
+logger.info("mcp_server core logger initialized at level %s (env %s)", log_level_name, LOG_LEVEL_ENV_VAR)
+
+# Optional: control pysisense SDK debug separately.
+SDK_DEBUG_ENV_VAR = "PYSISENSE_SDK_DEBUG"
+_raw_sdk_debug = os.getenv(SDK_DEBUG_ENV_VAR)
+
+if _raw_sdk_debug is None:
+    SDK_DEBUG = log_level == logging.DEBUG
+else:
+    SDK_DEBUG = _raw_sdk_debug.strip().lower() == "true"
+
+logger.info(
+    "PYSISENSE SDK debug=%s (env %s=%r, LOG_LEVEL=%s)",
+    SDK_DEBUG,
+    SDK_DEBUG_ENV_VAR,
+    _raw_sdk_debug,
+    log_level_name,
+)
 
 
 def _log_json_truncated(label: str, obj: Any, max_chars: int = 2000) -> None:
-    """Small helper to log JSON or plain text without flooding the log file."""
     try:
         text = json.dumps(obj, indent=2, default=str)
     except Exception:
@@ -63,13 +79,10 @@ def _log_json_truncated(label: str, obj: Any, max_chars: int = 2000) -> None:
 
 
 def _scrub_secrets(obj: Any) -> Any:
-    """
-    Recursively redact obvious secrets (tokens, passwords) from log output.
-    """
     if isinstance(obj, dict):
         cleaned = {}
         for k, v in obj.items():
-            key_l = k.lower()
+            key_l = str(k).lower()
             if (
                 "token" in key_l
                 or key_l in ("api-key", "apikey")
@@ -80,72 +93,107 @@ def _scrub_secrets(obj: Any) -> Any:
             else:
                 cleaned[k] = _scrub_secrets(v)
         return cleaned
-
     if isinstance(obj, list):
         return [_scrub_secrets(x) for x in obj]
-
     return obj
 
 
 # -----------------------------------------------------------------------------
-# Config (code-level toggle for mutations)
+# Config
 # -----------------------------------------------------------------------------
 ALLOW_MUTATIONS = True
 
-# Only registry is file-based; Sisense connections are always inline
-REGISTRY_JSON = os.environ.get(
-    "PYSISENSE_REGISTRY_PATH", "config/tools.registry.with_examples.json"
-)
+REGISTRY_JSON = os.environ.get("PYSISENSE_REGISTRY_PATH", "config/tools.registry.with_examples.json")
 
-# Optional: limit exposed modules via env (not related to mutations)
-ALLOW_MODULES = {
-    m.strip()
-    for m in os.environ.get("ALLOW_MODULES", "").split(",")
-    if m.strip()
-}
+ALLOW_MODULES = {m.strip() for m in os.environ.get("ALLOW_MODULES", "").split(",") if m.strip()}
 
 logger.info("Config:")
 logger.info("  REGISTRY_JSON   = %s", REGISTRY_JSON)
 logger.info("  ALLOW_MUTATIONS = %s", ALLOW_MUTATIONS)
 logger.info("  ALLOW_MODULES   = %s", ",".join(sorted(ALLOW_MODULES)) or "<all>")
 
-# Server-side mutation audit log
 audit_logger = logging.getLogger("mcp_server.mutations")
-audit_logger.setLevel(level)
+audit_logger.setLevel(log_level)
 audit_logger.propagate = False
 if not any(isinstance(h, logging.FileHandler) for h in audit_logger.handlers):
     audit_fh = logging.FileHandler(LOG_DIR / "server_mutations.log", encoding="utf-8")
-    audit_fh.setLevel(level)
-    audit_fmt = logging.Formatter(
-        "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
-    )
+    audit_fh.setLevel(log_level)
+    audit_fmt = logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
     audit_fh.setFormatter(audit_fmt)
     audit_logger.addHandler(audit_fh)
 
+# -----------------------------------------------------------------------------
+# Default tenant env fallbacks (Claude Desktop)
+# -----------------------------------------------------------------------------
+DEFAULT_TENANT_ENABLED_ENV_VAR = "PYSISENSE_USE_DEFAULT_TENANT"
+DEFAULT_TENANT_DOMAIN_ENV_VAR = "PYSISENSE_DEFAULT_DOMAIN"
+DEFAULT_TENANT_TOKEN_ENV_VAR = "PYSISENSE_DEFAULT_TOKEN"
+DEFAULT_TENANT_SSL_ENV_VAR = "PYSISENSE_DEFAULT_SSL"
+
+DEFAULT_MIGRATION_TENANTS_ENABLED_ENV_VAR = "PYSISENSE_USE_DEFAULT_MIGRATION_TENANTS"
+DEFAULT_SOURCE_DOMAIN_ENV_VAR = "PYSISENSE_DEFAULT_SOURCE_DOMAIN"
+DEFAULT_SOURCE_TOKEN_ENV_VAR = "PYSISENSE_DEFAULT_SOURCE_TOKEN"
+DEFAULT_SOURCE_SSL_ENV_VAR = "PYSISENSE_DEFAULT_SOURCE_SSL"
+DEFAULT_TARGET_DOMAIN_ENV_VAR = "PYSISENSE_DEFAULT_TARGET_DOMAIN"
+DEFAULT_TARGET_TOKEN_ENV_VAR = "PYSISENSE_DEFAULT_TARGET_TOKEN"
+DEFAULT_TARGET_SSL_ENV_VAR = "PYSISENSE_DEFAULT_TARGET_SSL"
+
+
+def _env_flag(name: str, default: str = "false") -> bool:
+    return os.getenv(name, default).strip().lower() in ("1", "true", "yes", "y", "on")
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "y", "on")
+
+
+# -----------------------------------------------------------------------------
+# Concurrency caps + thread offload helper (single-worker friendly)
+# -----------------------------------------------------------------------------
+MAX_CONCURRENT_MIGRATIONS_ENV_VAR = "PYSISENSE_MAX_CONCURRENT_MIGRATIONS"
+MAX_CONCURRENT_READ_TOOLS_ENV_VAR = "PYSISENSE_MAX_CONCURRENT_READ_TOOLS"
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        val = int(raw.strip())
+        return val if val > 0 else default
+    except Exception:
+        return default
+
+
+MAX_CONCURRENT_MIGRATIONS = _env_int(MAX_CONCURRENT_MIGRATIONS_ENV_VAR, default=1)
+MAX_CONCURRENT_READ_TOOLS = _env_int(MAX_CONCURRENT_READ_TOOLS_ENV_VAR, default=5)
+
+_MIGRATION_SEM = asyncio.Semaphore(MAX_CONCURRENT_MIGRATIONS)
+_READ_SEM = asyncio.Semaphore(MAX_CONCURRENT_READ_TOOLS)
+
+logger.info(
+    "Concurrency caps: MAX_CONCURRENT_MIGRATIONS=%d (env %s), MAX_CONCURRENT_READ_TOOLS=%d (env %s)",
+    MAX_CONCURRENT_MIGRATIONS,
+    MAX_CONCURRENT_MIGRATIONS_ENV_VAR,
+    MAX_CONCURRENT_READ_TOOLS,
+    MAX_CONCURRENT_READ_TOOLS_ENV_VAR,
+)
 
 # -----------------------------------------------------------------------------
 # SDK imports / init
 # -----------------------------------------------------------------------------
 try:
-    from pysisense import (
-        SisenseClient,
-        AccessManagement,
-        Dashboard,
-        DataModel,
-        Migration,
-        WellCheck,
-    )
+    from pysisense import SisenseClient, AccessManagement, Dashboard, DataModel, Migration, WellCheck
 except Exception as e:
     logger.exception("Failed to import pysisense SDK")
     raise RuntimeError(f"Failed to import pysisense SDK: {e}") from e
 
-logger.info(
-    "pysisense SDK imported successfully. Clients will be created "
-    "from inline domain/token/ssl at runtime."
-)
+logger.info("pysisense SDK imported successfully. Clients will be created from inline domain/token/ssl at runtime.")
 
 SUPPORTED_MODULES = ["access", "dashboard", "datamodel", "migration", "wellcheck"]
-
 
 # -----------------------------------------------------------------------------
 # Registry load / normalize
@@ -157,10 +205,7 @@ try:
         REGISTRY = json.load(f)
 except FileNotFoundError:
     logger.exception("Registry file not found")
-    raise RuntimeError(
-        f"Registry file not found: {REGISTRY_JSON}. "
-        f"Generate it before starting the server."
-    )
+    raise RuntimeError(f"Registry file not found: {REGISTRY_JSON}. Generate it before starting the server.")
 except Exception as e:
     logger.exception("Failed to load registry JSON")
     raise RuntimeError(f"Failed to load registry JSON: {e}") from e
@@ -206,94 +251,108 @@ logger.info("  Skipped (ALLOW_MODULES) : %d", skipped_module_filter)
 
 
 def _one_liner(txt: Optional[str]) -> str:
-    """Return the first non-empty line from a longer description."""
     if not txt:
         return "No description."
     return txt.strip().splitlines()[0]
 
 
+def _bucket_for_tool(tool_id: str) -> str:
+    meta = TOOLS_BY_ID.get(tool_id)
+    module = meta.get("module") if isinstance(meta, dict) else None
+    if module == "migration":
+        return "migration"
+    return "read"
+
+
+async def invoke_tool_async(tool_id: str, arguments: Dict[str, Any] = {}) -> Dict[str, Any]:
+    sem = _MIGRATION_SEM if _bucket_for_tool(tool_id) == "migration" else _READ_SEM
+
+    try:
+        safe_args = copy.deepcopy(arguments or {})
+    except Exception:
+        safe_args = dict(arguments or {})
+
+    async with sem:
+        return await asyncio.to_thread(invoke_tool, tool_id, safe_args)
+
+
 # -----------------------------------------------------------------------------
-# MULTITENANT: per-request tenant helpers (inline connection only)
+# MULTITENANT: per-request tenant helpers
 # -----------------------------------------------------------------------------
 def _extract_tenant_from_arguments(arguments: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Pull tenant-scoping keys out of arguments so they are NOT passed
-    into SDK methods.
+    domain = arguments.pop("domain", None)
+    token = arguments.pop("token", None)
+    ssl = arguments.pop("ssl", None)
 
-    For normal (non-migration) modules we expect:
-      - domain: Sisense base URL (e.g. https://acme.sisense.com)
-      - token:  API token
-      - ssl:    bool for SSL verification
-    """
-    tenant = {
-        "domain": arguments.pop("domain", None),
-        "token": arguments.pop("token", None),
-        "ssl": arguments.pop("ssl", None),
-    }
+    if ssl is None:
+        ssl = True
 
-    if tenant["ssl"] is None:
-        tenant["ssl"] = True
+    if (not domain or not token) and _env_flag(DEFAULT_TENANT_ENABLED_ENV_VAR, "false"):
+        env_domain = os.getenv(DEFAULT_TENANT_DOMAIN_ENV_VAR)
+        env_token = os.getenv(DEFAULT_TENANT_TOKEN_ENV_VAR)
+        env_ssl = _env_bool(DEFAULT_TENANT_SSL_ENV_VAR, default=ssl)
+
+        if not domain:
+            domain = env_domain
+        if not token:
+            token = env_token
+        ssl = env_ssl
+
+        if domain and token:
+            logger.info("Using DEFAULT tenant connection from env: domain=%s ssl=%s", domain, ssl)
+
+    tenant = {"domain": domain, "token": token, "ssl": ssl}
 
     if tenant["domain"] and tenant["token"]:
-        logger.info(
-            "Using inline tenant connection: domain=%s ssl=%s",
-            tenant["domain"],
-            tenant["ssl"],
-        )
-    else:
-        logger.error(
-            "Missing tenant domain/token in arguments. "
-            "Make sure the client passes domain, token, and ssl for each tool call."
-        )
-        raise RuntimeError(
-            "Tenant domain and token are required for SisenseClient.from_connection."
-        )
-    return tenant
+        logger.info("Using tenant connection: domain=%s ssl=%s", tenant["domain"], tenant["ssl"])
+        return tenant
+
+    logger.error(
+        "Missing tenant domain/token. Pass domain/token in tool args or set %s=true and %s/%s in env.",
+        DEFAULT_TENANT_ENABLED_ENV_VAR,
+        DEFAULT_TENANT_DOMAIN_ENV_VAR,
+        DEFAULT_TENANT_TOKEN_ENV_VAR,
+    )
+    raise RuntimeError("Tenant domain and token are required for SisenseClient.from_connection.")
 
 
-def _extract_migration_tenants_from_arguments(
-    arguments: Dict[str, Any]
-) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """
-    Pull source/target tenant info for migration tools.
+def _extract_migration_tenants_from_arguments(arguments: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    src_domain = arguments.pop("source_domain", None)
+    src_token = arguments.pop("source_token", None)
+    src_ssl = arguments.pop("source_ssl", None)
 
-    Expected keys:
-      - source_domain, source_token, source_ssl
-      - target_domain, target_token, target_ssl
+    tgt_domain = arguments.pop("target_domain", None)
+    tgt_token = arguments.pop("target_token", None)
+    tgt_ssl = arguments.pop("target_ssl", None)
 
-    All are removed from `arguments` so they are not passed as method kwargs.
-    """
-    src = {
-        "domain": arguments.pop("source_domain", None),
-        "token": arguments.pop("source_token", None),
-        "ssl": arguments.pop("source_ssl", None),
-    }
-    tgt = {
-        "domain": arguments.pop("target_domain", None),
-        "token": arguments.pop("target_token", None),
-        "ssl": arguments.pop("target_ssl", None),
-    }
+    if src_ssl is None:
+        src_ssl = True
+    if tgt_ssl is None:
+        tgt_ssl = True
 
-    if src["ssl"] is None:
-        src["ssl"] = True
-    if tgt["ssl"] is None:
-        tgt["ssl"] = True
+    if _env_flag(DEFAULT_MIGRATION_TENANTS_ENABLED_ENV_VAR, "false"):
+        if not src_domain:
+            src_domain = os.getenv(DEFAULT_SOURCE_DOMAIN_ENV_VAR)
+        if not src_token:
+            src_token = os.getenv(DEFAULT_SOURCE_TOKEN_ENV_VAR)
+        src_ssl = _env_bool(DEFAULT_SOURCE_SSL_ENV_VAR, default=src_ssl)
+
+        if not tgt_domain:
+            tgt_domain = os.getenv(DEFAULT_TARGET_DOMAIN_ENV_VAR)
+        if not tgt_token:
+            tgt_token = os.getenv(DEFAULT_TARGET_TOKEN_ENV_VAR)
+        tgt_ssl = _env_bool(DEFAULT_TARGET_SSL_ENV_VAR, default=tgt_ssl)
+
+    src = {"domain": src_domain, "token": src_token, "ssl": src_ssl}
+    tgt = {"domain": tgt_domain, "token": tgt_token, "ssl": tgt_ssl}
 
     if not (src["domain"] and src["token"]):
-        logger.error("Missing source_domain/source_token for migration tool.")
-        raise RuntimeError(
-            "Migration tools require source_domain and source_token to be provided."
-        )
-
+        raise RuntimeError("Migration tools require source_domain and source_token to be provided.")
     if not (tgt["domain"] and tgt["token"]):
-        logger.error("Missing target_domain/target_token for migration tool.")
-        raise RuntimeError(
-            "Migration tools require target_domain and target_token to be provided."
-        )
+        raise RuntimeError("Migration tools require target_domain and target_token to be provided.")
 
     logger.info(
-        "Using inline migration connections: "
-        "source_domain=%s source_ssl=%s | target_domain=%s target_ssl=%s",
+        "Using migration connections: source_domain=%s source_ssl=%s | target_domain=%s target_ssl=%s",
         src["domain"],
         src["ssl"],
         tgt["domain"],
@@ -303,34 +362,18 @@ def _extract_migration_tenants_from_arguments(
 
 
 def _build_sisense_client(tenant: Dict[str, Any]) -> SisenseClient:
-    """
-    Build a SisenseClient for this tenant using inline connection info.
-
-    We do not write config.yaml here; we always call SisenseClient.from_connection.
-    """
     if not tenant.get("domain") or not tenant.get("token"):
         raise RuntimeError("Tenant domain and token are required for SisenseClient.")
-
-    logger.info(
-        "Building SisenseClient.from_connection for domain=%s ssl=%s",
-        tenant["domain"],
-        tenant.get("ssl", True),
-    )
 
     return SisenseClient.from_connection(
         domain=tenant["domain"],
         token=tenant["token"],
         is_ssl=tenant.get("ssl", True),
-        debug=True,
+        debug=SDK_DEBUG,
     )
 
 
 def _get_module_instance(module: str, tenant: Dict[str, Any]) -> Any:
-    """
-    Return a module instance for the requested module (non-migration).
-
-    For migration we handle construction separately via source/target clients.
-    """
     client = _build_sisense_client(tenant)
 
     if module == "access":
@@ -342,7 +385,6 @@ def _get_module_instance(module: str, tenant: Dict[str, Any]) -> Any:
     if module == "wellcheck":
         return WellCheck(api_client=client)
 
-    logger.error("Module '%s' not recognized for construction.", module)
     raise LookupError(f"Module '{module}' not recognized.")
 
 
@@ -350,119 +392,56 @@ def _get_module_instance(module: str, tenant: Dict[str, Any]) -> Any:
 # Core dispatcher
 # -----------------------------------------------------------------------------
 def _call_tool(tool_id: str, arguments: Dict[str, Any]) -> Any:
-    """
-    Core dispatcher:
-    - Look up tool metadata
-    - Extract tenant info (domain, token, ssl) from arguments
-      OR source/target tenants for migration
-    - Find module + method
-    - Invoke the corresponding PySisense method
-    """
     logger.info("Dispatching tool call: tool_id=%s", tool_id)
     _log_json_truncated("Incoming arguments", _scrub_secrets(arguments))
 
     meta = TOOLS_BY_ID.get(tool_id)
     if not meta:
-        logger.error("Unknown tool_id: %s", tool_id)
         raise ValueError(f"Unknown tool_id: {tool_id}")
 
-    # Server-side mutation gate (code-level toggle)
     if meta.get("mutates") and not ALLOW_MUTATIONS:
-        logger.warning(
-            "Blocked mutating tool '%s' because ALLOW_MUTATIONS is false.",
-            tool_id,
-        )
-        raise PermissionError(
-            f"Tool '{tool_id}' is mutating and ALLOW_MUTATIONS is false."
-        )
+        raise PermissionError(f"Tool '{tool_id}' is mutating and ALLOW_MUTATIONS is false.")
 
     module = meta["module"]
     method = meta["method"]
 
-    # ------------------------------------------------------------------
-    # Tenant handling: normal vs migration
-    # ------------------------------------------------------------------
     if module == "migration":
-        # Expect source_* and target_* keys in arguments
         src_tenant, tgt_tenant = _extract_migration_tenants_from_arguments(arguments)
-
         src_client = _build_sisense_client(src_tenant)
         tgt_client = _build_sisense_client(tgt_tenant)
-
-        inst = Migration(
-            source_client=src_client,
-            target_client=tgt_client,
-            debug=True,
-        )
+        inst = Migration(source_client=src_client, target_client=tgt_client, debug=True)
     else:
-        # Normal path: single tenant (chat mode / non-migration tools)
         tenant = _extract_tenant_from_arguments(arguments)
         inst = _get_module_instance(module, tenant)
 
     if not hasattr(inst, method):
-        logger.error(
-            "Method '%s.%s' not found on SDK instance for tool_id=%s",
-            module,
-            method,
-            tool_id,
-        )
         raise LookupError(f"Method '{module}.{method}' not found on SDK instance.")
 
     params = meta.get("parameters", {})
     required = params.get("required", [])
-    missing = [
-        k for k in required if k not in arguments or arguments.get(k) in (None, "")
-    ]
+    missing = [k for k in required if k not in arguments or arguments.get(k) in (None, "")]
     if missing:
-        logger.error("Missing required arguments for %s: %s", tool_id, missing)
         raise ValueError(f"Missing required arguments: {missing}")
 
-    # Coerce JSON-looking strings into dicts/lists
     coerced: Dict[str, Any] = {}
     for k, v in (arguments or {}).items():
         if isinstance(v, str):
             vs = v.strip()
-            if (vs.startswith("{") and vs.endswith("}")) or (
-                vs.startswith("[") and vs.endswith("]")
-            ):
+            if (vs.startswith("{") and vs.endswith("}")) or (vs.startswith("[") and vs.endswith("]")):
                 try:
                     coerced[k] = json.loads(vs)
                     continue
                 except Exception:
-                    logger.debug(
-                        "Failed to JSON-parse argument %s; using raw string.", k
-                    )
+                    pass
         coerced[k] = v
 
     func = getattr(inst, method)
-    logger.info("Calling SDK method %s.%s for tool_id=%s", module, method, tool_id)
 
     try:
-        # Audit mutations just before execution
         if meta.get("mutates"):
-            audit_logger.info(
-                "EXECUTING mutation tool=%s args=%s",
-                tool_id,
-                json.dumps(arguments, ensure_ascii=False),
-            )
+            audit_logger.info("EXECUTING mutation tool=%s args=%s", tool_id, json.dumps(arguments, ensure_ascii=False))
 
         result = func(**coerced)
-
-        # Light summary of result
-        if isinstance(result, list):
-            logger.info(
-                "SDK method %s.%s returned list with %d items",
-                module,
-                method,
-                len(result),
-            )
-        else:
-            logger.info(
-                "SDK method %s.%s returned %s",
-                module,
-                method,
-                type(result).__name__,
-            )
         _log_json_truncated("SDK method result (truncated)", result)
         return result
     except TypeError as te:
@@ -474,25 +453,15 @@ def _call_tool(tool_id: str, arguments: Dict[str, Any]) -> Any:
         msg = f"Argument error: {te}"
         if sig_str:
             msg += f" | expected signature: {module}.{method}{sig_str}"
-        logger.exception("TypeError during SDK call for tool_id=%s", tool_id)
         raise ValueError(msg) from te
     except Exception as e:
-        logger.exception(
-            "Execution error in SDK call for tool_id=%s (%s)",
-            tool_id,
-            type(e).__name__,
-        )
         raise RuntimeError(f"Execution error: {type(e).__name__}: {e}") from e
 
 
 # -----------------------------------------------------------------------------
-# Public helpers used by HTTP (and any other front-end)
+# Public helpers
 # -----------------------------------------------------------------------------
 def health_summary() -> Dict[str, Any]:
-    """
-    Basic health and summary info about the PySisense tool server.
-    """
-    logger.info("health_summary called.")
     payload = {
         "ok": True,
         "modules": sorted(SUPPORTED_MODULES),
@@ -500,20 +469,10 @@ def health_summary() -> Dict[str, Any]:
         "mutations_allowed": ALLOW_MUTATIONS,
         "registry_path": str(Path(REGISTRY_JSON).resolve()),
     }
-    _log_json_truncated("health payload", payload)
     return payload
 
 
-def list_tools(
-    module: Optional[str] = None,
-    tag: Optional[str] = None,
-) -> List[Dict[str, Any]]:
-    """
-    List available tools from the registry.
-
-    Filter by module and/or tag if supplied.
-    """
-    logger.info("list_tools called with module=%s, tag=%s", module, tag)
+def list_tools(module: Optional[str] = None, tag: Optional[str] = None) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     for tid, row in TOOLS_BY_ID.items():
         if module and row.get("module") != module:
@@ -535,35 +494,18 @@ def list_tools(
                 "updated_at": row.get("updated_at"),
             }
         )
-    logger.info("list_tools returning %d tools", len(out))
     return out
 
 
 def invoke_tool(tool_id: str, arguments: Dict[str, Any] = {}) -> Dict[str, Any]:
-    """
-    Invoke a specific PySisense tool by tool_id.
-
-    This wraps _call_tool and normalizes the output into a standard payload.
-    """
-    logger.info("invoke_tool called for tool_id=%s", tool_id)
-    _log_json_truncated("invoke_tool arguments", _scrub_secrets(arguments))
-
     try:
         result = _call_tool(tool_id, arguments or {})
+        payload: Dict[str, Any] = {"tool_id": tool_id, "ok": True, "result": result}
 
-        payload: Dict[str, Any] = {
-            "tool_id": tool_id,
-            "ok": True,
-            "result": result,
-        }
-
-        # Special handling for access.get_unused_columns:
-        # result is a list of columns with a boolean "used" flag.
         if tool_id == "access.get_unused_columns" and isinstance(result, list):
             total_columns = len(result)
             used_count = 0
             unused_count = 0
-
             for row in result:
                 if not isinstance(row, dict):
                     continue
@@ -571,28 +513,11 @@ def invoke_tool(tool_id: str, arguments: Dict[str, Any] = {}) -> Dict[str, Any]:
                     used_count += 1
                 elif row.get("used") is False:
                     unused_count += 1
-
             payload["total_columns"] = total_columns
             payload["used_count"] = used_count
             payload["unused_count"] = unused_count
 
-            logger.info(
-                "access.get_unused_columns summary: total_columns=%d, used=%d, unused=%d",
-                total_columns,
-                used_count,
-                unused_count,
-            )
-
-        _log_json_truncated("invoke_tool success payload", payload)
         return payload
 
     except Exception as e:
-        logger.exception("Error invoking tool %s", tool_id)
-        err_payload = {
-            "tool_id": tool_id,
-            "ok": False,
-            "error": str(e),
-            "error_type": type(e).__name__,
-        }
-        _log_json_truncated("invoke_tool error payload", err_payload)
-        return err_payload
+        return {"tool_id": tool_id, "ok": False, "error": str(e), "error_type": type(e).__name__}

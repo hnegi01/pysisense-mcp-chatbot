@@ -1,4 +1,4 @@
-'''
+"""
 High-level LLM + tools orchestration for the FES assistant.
 - Loads the PySisense tool registry and exposes tools to the LLM.
 - Talks to the LLM provider (Azure OpenAI or Databricks).
@@ -10,7 +10,7 @@ Note: The `messages` argument to call_llm_with_tools is the FULL
       Right now, planning and summarisation only use the latest
       user message, but we keep the full history so we can
       support multi-step flows in the future.
-'''
+"""
 import os
 import json
 import logging
@@ -18,29 +18,26 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 import asyncio
 
-
 import httpx
-from dotenv import load_dotenv
-
-from .mcp_client import McpClient
 from logging.handlers import RotatingFileHandler
 
-
-load_dotenv(override=True)
+from .mcp_client import McpClient
 
 # -----------------------------------------------------------------------------
 # Logging
 # -----------------------------------------------------------------------------
-log_level = "debug"  # change to "info", "warning", etc. as you like
+LOG_LEVEL_ENV_VAR = "FES_LOG_LEVEL"
+DEFAULT_LOG_LEVEL = "INFO"
+
+log_level_name = os.getenv(LOG_LEVEL_ENV_VAR, DEFAULT_LOG_LEVEL).upper()
+log_level = getattr(logging, log_level_name, logging.INFO)
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 LOG_DIR = ROOT_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
 logger = logging.getLogger("backend.agent.llm_agent")
-
-level = getattr(logging, log_level.upper(), logging.INFO)
-logger.setLevel(level)
+logger.setLevel(log_level)
 logger.propagate = False
 
 if not any(isinstance(h, RotatingFileHandler) for h in logger.handlers):
@@ -50,14 +47,18 @@ if not any(isinstance(h, RotatingFileHandler) for h in logger.handlers):
         backupCount=5,              # keep 5 old files
         encoding="utf-8",
     )
-    fh.setLevel(level)
+    fh.setLevel(log_level)
     fmt = logging.Formatter(
         "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
     )
     fh.setFormatter(fmt)
     logger.addHandler(fh)
 
-logger.info("llm_agent logger initialized at level %s", log_level.upper())
+logger.info(
+    "llm_agent logger initialized at level %s (env %s)",
+    log_level_name,
+    LOG_LEVEL_ENV_VAR,
+)
 
 # -----------------------------------------------------------------------------
 # HTTP retry config for LLM calls
@@ -93,11 +94,11 @@ logger.info("ALLOW_SUMMARIZATION=%s", ALLOW_SUMMARIZATION)
 
 # Separate audit logger for mutations
 audit_logger = logging.getLogger("backend.agent.llm_agent.mutations")
-audit_logger.setLevel(level)
+audit_logger.setLevel(log_level)
 audit_logger.propagate = False
 if not any(isinstance(h, logging.FileHandler) for h in audit_logger.handlers):
     audit_fh = logging.FileHandler(LOG_DIR / "mutations.log", encoding="utf-8")
-    audit_fh.setLevel(level)
+    audit_fh.setLevel(log_level)
     audit_fmt = logging.Formatter(
         "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
     )
@@ -258,6 +259,136 @@ def _log_json_truncated(title: str, obj: Any, max_len: int = 2000) -> None:
     if len(text) > max_len:
         text = text[:max_len] + "... [truncated]"
     logger.debug("%s:\n%s", title, text)
+
+# --------------------------------------------------------------------------
+# Generic payload shrinker for LLM summarisation
+# --------------------------------------------------------------------------
+
+
+MAX_LIST_ITEMS_FOR_LLM = 20
+MAX_KEYS_PER_OBJECT_FOR_LLM = 10
+MAX_DEPTH_FOR_LLM = 8
+MAX_STRING_LENGTH_FOR_LLM = 300
+MAX_TOTAL_LENGTH_FOR_LLM = 10_000  # rough char budget after json.dumps
+TRUNCATION_NOTE_KEY = "_truncated"
+
+
+def _shrink_for_llm(
+    value: Any,
+    *,
+    max_list_items: int = MAX_LIST_ITEMS_FOR_LLM,
+    max_keys_per_object: int = MAX_KEYS_PER_OBJECT_FOR_LLM,
+    max_depth: int = MAX_DEPTH_FOR_LLM,
+    max_string_length: int = MAX_STRING_LENGTH_FOR_LLM,
+    max_total_length: int = MAX_TOTAL_LENGTH_FOR_LLM,
+) -> Any:
+    """
+    Generic, shape-aware shrinker for tool results before sending to the LLM.
+
+    - Works for dicts, lists, scalars, and nested structures.
+    - Caps list length, number of keys per dict, nesting depth, and string length.
+    - Also enforces an overall max_total_length budget (approximate).
+    """
+    budget = {"remaining": max_total_length}
+
+    def _take_chars(n: int) -> None:
+        budget["remaining"] = max(0, budget["remaining"] - n)
+
+    def _shrink_inner(obj: Any, depth: int) -> Any:
+        # Hard stop if budget exhausted
+        if budget["remaining"] <= 0:
+            return "... [truncated due to max_total_length]"
+
+        # Scalars
+        if isinstance(obj, str):
+            s = obj
+            if len(s) > max_string_length:
+                s = s[:max_string_length] + "... [truncated]"
+            _take_chars(len(s))
+            return s
+
+        if isinstance(obj, (int, float, bool)) or obj is None:
+            s = str(obj)
+            _take_chars(len(s))
+            return obj
+
+        # Lists
+        if isinstance(obj, list):
+            out: List[Any] = []
+            total_len = len(obj)
+            for item in obj[:max_list_items]:
+                if budget["remaining"] <= 0:
+                    break
+                out.append(_shrink_inner(item, depth + 1))
+
+            if total_len > max_list_items:
+                note = f"... [{total_len - max_list_items} more items omitted for summarization]"
+                _take_chars(len(note))
+                out.append(note)
+
+            # Rough accounting for brackets/commas
+            _take_chars(2 + len(out))
+            return out
+
+        # Dicts
+        if isinstance(obj, dict):
+            # Depth cap: don't expand further, just summarise
+            if depth >= max_depth:
+                summary_text = (
+                    f"Nested content limited for summarization (object with {len(obj)} keys)"
+                )
+                summary = {"_summary": summary_text}
+                _take_chars(len(summary_text))
+                return summary
+
+            out: Dict[str, Any] = {}
+            keys = list(obj.items())
+            total_keys = len(keys)
+
+            for idx, (k, v) in enumerate(keys):
+                if idx >= max_keys_per_object or budget["remaining"] <= 0:
+                    break
+                key_str = str(k)
+                _take_chars(len(key_str))
+                out[key_str] = _shrink_inner(v, depth + 1)
+
+            if total_keys > max_keys_per_object:
+                note = (
+                    f"{total_keys - max_keys_per_object} additional fields "
+                    f"omitted for summarization"
+                )
+                out["_truncated_keys"] = note
+                _take_chars(len(note))
+
+            # Rough accounting for braces/commas
+            _take_chars(2 + len(out))
+            return out
+
+        # Fallback for unknown types
+        s = repr(obj)
+        if len(s) > max_string_length:
+            s = s[:max_string_length] + "... [truncated]"
+        _take_chars(len(s))
+        return s
+
+    shrunk = _shrink_inner(value, depth=0)
+
+    # If we fully exhausted budget, mark explicitly
+    if budget["remaining"] <= 0:
+        if isinstance(shrunk, dict):
+            shrunk.setdefault(
+                TRUNCATION_NOTE_KEY,
+                "Payload limited due to summarization size constraints; only partial content shown.",
+            )
+        else:
+            shrunk = {
+                TRUNCATION_NOTE_KEY: (
+                    "Payload limited due to summarization size constraints; only partial content shown."
+                ),
+                "partial": shrunk,
+            }
+
+    return shrunk
 
 
 async def call_llm_raw(
@@ -526,35 +657,85 @@ Sisense deployment. Prefer tools that read from the source and/or write
 into the target to migrate users, groups, datamodels, and dashboards.
 """.strip()
 
-# Base summary rules (shared between chat + migration)
-SUMMARY_SYSTEM_PROMPT_BASE = """
-You are a Sisense analytics assistant.
+SUMMARY_SYSTEM_PROMPT_CHAT = """
+You are a Sisense analytics assistant. Your current task is to summarise
+tool results for the user.
 
 You are given:
-- The user's question.
-- Which tools were called.
-- The tool results as JSON (optionally with a `row_count` field).
+- The user's latest question.
+- A planning assistant message that shows which tools were called and with
+  what arguments.
+- One or more tool messages containing JSON results (already size-limited
+  for you).
+
+Your job:
+- Answer the user's question directly in clear, concise natural language.
+- Base your answer only on the tool results you see; do NOT invent users,
+  emails, dashboard names, datamodel names, or any other objects.
+- Focus on what matters to the user, not on the internal tools.
 
 Rules:
-- NEVER invent users, emails, dashboard names, or any other objects.
-- If a tool result includes `row_count`, you MUST use that exact number.
-- If many rows are returned, DO NOT list every item. Prefer:
+- If a tool result includes a `row_count` or similar count field, use that
+  exact number.
+- If the total number of rows is small (for example, 20 rows or fewer),
+  it is usually better to list all rows in a clear, structured way,
+  especially if the user asked for "raw", "full list", "every table",
+  or similar.
+- If many rows are returned, do NOT list every item. Prefer:
   - counts (how many rows, how many per role/group),
   - key patterns,
-  - and at most a few concrete examples (max 3) unless the user explicitly
+  - and at most a few concrete examples (max 5) unless the user explicitly
     asks for a full list.
 - If a tool failed or was cancelled, clearly explain what happened.
-- Suggest obvious next steps (e.g. filtering, exporting, drilling into one user).
-- If you don't know something from the tool result, say you don't know instead of guessing.
+- Suggest obvious next steps (e.g. filtering, exporting, drilling into one user
+  or one dashboard) when it is helpful.
+- If you don't know something from the tool result, say you don't know instead
+  of guessing.
+- When the user asks specifically about tables or schema structure:
+  - Do NOT talk about "datasets and tables" together.
+  - Avoid mentioning dataset names or dataset IDs unless the user explicitly
+    asks for them.
+  - Instead, describe the schema in terms of tables: table_name, columns
+    (if available), provider, connection_name, and any relevant type or
+    status fields.
+  - Prefer phrases like "this data model contains the following tables"
+    rather than "datasets and tables".
 """.strip()
 
-SUMMARY_SYSTEM_PROMPT_CHAT = (
-    CHAT_MODE_SYSTEM_PROMPT + "\n\n" + SUMMARY_SYSTEM_PROMPT_BASE
-)
 
-SUMMARY_SYSTEM_PROMPT_MIGRATION = (
-    MIGRATION_MODE_SYSTEM_PROMPT + "\n\n" + SUMMARY_SYSTEM_PROMPT_BASE
-)
+SUMMARY_SYSTEM_PROMPT_MIGRATION = """
+You are a Sisense migration assistant. Your current task is to summarise
+tool results related to migrating assets between a source and target
+Sisense deployment.
+
+You are given:
+- The user's latest question.
+- A planning assistant message that shows which migration tools were called
+  and with what arguments.
+- One or more tool messages containing JSON results (already size-limited
+  for you).
+
+Your job:
+- Explain what happened in the migration context (what was found, what was
+  migrated, what could not be migrated) in clear, concise natural language.
+- Base your answer only on the tool results you see; do NOT invent users,
+  emails, dashboard names, datamodel names, or any other objects.
+
+Rules:
+- If a tool result includes a `row_count` or similar count field, use that
+  exact number.
+- If many rows are returned, do NOT list every item. Prefer:
+  - counts (how many objects were found or migrated),
+  - key patterns or high-level structure,
+  - and at most a few concrete examples (max 3) unless the user explicitly
+    asks for a full list.
+- If a tool failed, was cancelled, or indicates partial migration, clearly
+  explain what happened and what is missing.
+- Suggest obvious next steps (e.g. rerun with filters, fix missing users/groups,
+  migrate dependencies) when it is helpful.
+- If you don't know something from the tool result, say you don't know instead
+  of guessing.
+""".strip()
 
 
 def _approval_key(tool_id: str, args: Dict[str, Any]) -> Tuple[str, str]:
@@ -615,11 +796,13 @@ async def call_llm_with_tools(
     if approved_mutations is None:
         approved_mutations = set()
 
-    # Per-call override for summarization; fall back to global default
+    # Per-call override for summarisation; global env is a hard cap
     if allow_summarization is None:
+        # No override → just use global
         allow_summarization_flag = ALLOW_SUMMARIZATION
     else:
-        allow_summarization_flag = allow_summarization
+        # Global env is a hard kill switch; cannot be overridden by clients
+        allow_summarization_flag = ALLOW_SUMMARIZATION and allow_summarization
 
     # Infer mode from tools (chat vs migration) so we can pick the right prompts
     mode = _infer_mode_from_tools(tools)
@@ -642,9 +825,6 @@ async def call_llm_with_tools(
     LAST_TOOL_RESULT = None
 
     # ----- find last user (from FULL history) -----
-    # NOTE: messages is the full chat history from the UI. Today, the planner
-    #       and summariser only use the latest user message, but keeping the
-    #       full history here will let us add multi-step flows later.
     latest_user_message = None
     for m in reversed(messages):
         if m.get("role") == "user":
@@ -756,33 +936,8 @@ async def call_llm_with_tools(
         _log_json_truncated(f"MCP result for {name}", result)
         LAST_TOOL_RESULT = result
 
-        # Build trimmed payload for summariser: add row_count, cap rows/cols
-        payload = result
-        try:
-            if isinstance(result, dict) and result.get("ok", True):
-                rows = result.get("result")
-                if isinstance(rows, list) and rows and isinstance(rows[0], dict):
-                    row_count = len(rows)
-                    MAX_ROWS_FOR_LLM = 20
-                    MAX_COLS_FOR_LLM = 5
-
-                    light_rows = []
-                    for row in rows[:MAX_ROWS_FOR_LLM]:
-                        if not isinstance(row, dict):
-                            continue
-                        light = {}
-                        for i, (k, v) in enumerate(row.items()):
-                            if i >= MAX_COLS_FOR_LLM:
-                                break
-                            light[k] = v
-                        light_rows.append(light)
-
-                    payload = dict(result)
-                    payload["row_count"] = row_count
-                    payload["result"] = light_rows
-        except Exception:
-            payload = result
-
+        # Generic shrinker for LLM summarisation
+        payload = _shrink_for_llm(result)
         _log_json_truncated(f"Trimmed payload for LLM ({name})", payload)
 
         tool_messages_for_llm.append(
@@ -799,7 +954,7 @@ async def call_llm_with_tools(
     # ======================================================================
     if not allow_summarization_flag:
         logger.info(
-            "Summarisation is disabled (ALLOW_SUMMARIZATION=False); "
+            "Summarisation is disabled (allow_summarization_flag=False); "
             "skipping LLM summary call."
         )
 
@@ -836,7 +991,7 @@ async def call_llm_with_tools(
                 "want to enable summarisation, please toggle the setting in the Privacy & Controls section."
             )
 
-        logger.info(
+        logger.debug(
             "Final assistant summary (local-only, summarisation disabled):\n%s",
             final_content,
         )
@@ -888,6 +1043,6 @@ async def call_llm_with_tools(
                 f"failed with an error: {e}"
             )
 
-    logger.info("Final assistant summary:\n%s", final_content)
+    logger.debug("Final assistant summary:\n%s", final_content)
     logger.info("=== call_llm_with_tools END ===")
     return final_content

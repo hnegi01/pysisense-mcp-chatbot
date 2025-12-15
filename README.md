@@ -1,6 +1,6 @@
 # FES Assistant (PySisense MCP Assistant)
 
-Agentic Streamlit application and MCP (Model Context Protocol) tool server built on top of the [PySisense](https://github.com/sisense/pysisense) SDK.
+Agentic Streamlit application and MCP (Model Context Protocol) **Streamable HTTP** tool server built on top of the [PySisense](https://github.com/sisense/pysisense) SDK.
 
 FES Assistant lets Sisense Field Engineering (and power users) do two things:
 
@@ -9,62 +9,52 @@ FES Assistant lets Sisense Field Engineering (and power users) do two things:
 
 Under the hood there are three logical services:
 
-* A **Streamlit UI** (`frontend/app.py`)
-* A **backend API + agent layer** (`backend/api_server.py` + `backend/agent/*`)
-* An **MCP HTTP server** wrapping PySisense (`mcp_server/http_server.py`)
+- A **Streamlit UI** (`frontend/app.py`)
+- A **backend API + agent layer** (`backend/api_server.py` + `backend/agent/*`)
+- An **MCP Streamable HTTP server** wrapping PySisense (`mcp_server/server.py`)
 
-The UI talks to the backend via HTTP, the backend talks to the MCP server via HTTP, and the MCP server talks to Sisense via PySisense.
+The UI talks to the backend via HTTP, the backend talks to the MCP server via HTTP (JSON-RPC over Streamable HTTP), and the MCP server talks to Sisense via PySisense.
 
-The agent can use two LLM providers:
+## Quick links
 
-* **Azure OpenAI**
-* **Databricks Model Serving**
+- [`docker-compose.yml`](./docker-compose.yml)
+- [`docker-compose.prod.yml`](./docker-compose.prod.yml)
+- [`Dockerfile.mcp`](./Dockerfile.mcp)
+- [`Dockerfile.backend`](./Dockerfile.backend)
+- [`Dockerfile.ui`](./Dockerfile.ui)
+- [`.env.example`](./.env.example)
+- [`config_prod.sh`](./config_prod.sh)
+- [`mcp_server/server.py`](./mcp_server/server.py)
+- [`mcp_server/tools_core.py`](./mcp_server/tools_core.py)
+- [`refresh_registry.sh`](./refresh_registry.sh)
 
 ---
 
 ## Features
 
-* **Two main modes in the UI**
+- **Two main modes in the UI**
+  - **Chat with deployment**
+    - Connect to a single Sisense deployment and talk to an agent that can inspect and operate on that environment.
+  - **Migrate between deployments**
+    - Connect **source** and **target** Sisense environments and use migration tools to move assets.
 
-  * **Chat with deployment**
+- **MCP-powered tools over PySisense**
+  - PySisense SDK methods are wrapped as MCP tools and registered via a **tool registry JSON**.
+  - Tools cover areas like access management, datamodels, dashboards, migration, and well-checks.
 
-    * Connect to a single Sisense deployment and talk to an agent that can inspect and operate on that environment.
+- **Two LLM backends (configurable)**
+  - Switch between **Azure OpenAI** and **Databricks Model Serving** by changing environment variables.
+  - The agent layer abstracts over the provider so the rest of the app behaves the same.
 
-  * **Migrate between deployments**
+- **Safety via confirmation loops**
+  - For **create / modify / delete / migration**-style operations, the agent uses a **confirmation loop**:
+    - The agent explains what it plans to do (which assets, which environments, what changes).
+    - The UI shows this plan to the user.
+    - The action is only executed after explicit confirmation.
 
-    * Connect **source** and **target** Sisense environments and use migration tools to move assets.
-
-* **MCP-powered tools over PySisense**
-
-  * PySisense SDK methods are wrapped as MCP tools and registered via a **tool registry JSON**.
-  * Tools cover areas like access management, datamodels, dashboards, migration, and well-checks.
-
-* **Two LLM backends (configurable)**
-
-  * Switch between **Azure OpenAI** and **Databricks** by changing environment variables.
-  * The agent layer abstracts over the provider so the rest of the app behaves the same.
-
-* **Streamlit front-end**
-
-  * FES Assistant dashboard.
-  * Status panel showing available tools and current mode.
-  * Forms to connect Sisense environments:
-
-    * In **Chat** mode: a single Sisense domain + API token.
-    * In **Migration** mode: separate **source** and **target** domain + token pairs.
-
-* **Safety via confirmation loops**
-
-  * For **create / modify / delete / migration**-style operations, the agent uses a **confirmation loop**:
-
-    * The agent explains what it plans to do (which assets, which environments, what changes).
-    * The UI shows this plan to the user.
-    * The action is only executed after explicit confirmation.
-
-* **Optional “no summarisation” privacy mode**
-
-  * You can disable sending tool results back to the LLM via an environment variable or UI toggle.
-  * In that mode, tools still run, but the assistant only returns lightweight status messages.
+- **Optional “no summarization” privacy mode**
+  - You can disable sending tool results back to the LLM via an environment variable and (optionally) a UI toggle.
+  - In that mode, tools still run, but the assistant only returns lightweight status messages.
 
 ---
 
@@ -75,22 +65,21 @@ High-level flow:
 1. User interacts with **Streamlit** in `frontend/app.py`.
 2. The UI calls the **backend API** (`backend/api_server.py`) over HTTP (for example `/health`, `/tools`, `/agent/turn`).
 3. The backend:
-
-   * Manages **per-session MCP clients** and state in `backend/runtime.py`.
-   * Uses `backend/agent/llm_agent.py` for planning, tool selection, and summarisation.
-   * Uses `backend/agent/mcp_client.py` to call the MCP HTTP server.
-
-4. The **MCP HTTP server** (`mcp_server/http_server.py`):
-
-   * Exposes `/health`, `/tools`, and `/tools/{tool_id}`.
-   * Uses `mcp_server/tools_core.py` to map tool IDs to PySisense SDK calls.
-   * Reads the tool registry JSON from `config/`.
-
+   - Manages **per-session MCP clients** and state in `backend/runtime.py`.
+   - Uses `backend/agent/llm_agent.py` for planning, tool selection, and summarization.
+   - Uses `backend/agent/mcp_client.py` to call the MCP server.
+4. The **MCP Streamable HTTP server** (`mcp_server/server.py`):
+   - Exposes `/health`.
+   - Exposes an MCP endpoint `/mcp/` implementing MCP **Streamable HTTP** (JSON-RPC).
+   - Uses `mcp_server/tools_core.py` to map tool IDs to PySisense SDK calls.
+   - Reads the tool registry JSON from `config/`.
 5. PySisense uses Sisense REST APIs to talk to your Sisense deployments.
 
-### Folder structure
+### Architecture diagram
 
-Current layout:
+![FES Assistant architecture](images/FES_ASSISTANT_AD.png)
+
+### Folder structure
 
 ```text
 Root/
@@ -117,7 +106,7 @@ Root/
   logs/                  # Runtime logs (rotated; not committed)
 
   mcp_server/
-    http_server.py       # FastAPI MCP HTTP server (/health, /tools, /tools/{id})
+    server.py            # Starlette MCP Streamable HTTP server (/mcp/ JSON-RPC, /health)
     tools_core.py        # Glue between MCP tools and PySisense
 
   scripts/
@@ -126,75 +115,156 @@ Root/
     02_add_llm_examples_to_registry.py  # Uses an LLM to add examples; writes tools.registry.with_examples.json
     README.md                           # Notes for the scripts
 
+  .env.example
   .gitignore
+  .dockerignore
   LICENSE
-  README.md              # This file
-  refresh_registry.sh    # Convenience wrapper to rebuild the registries
-  requirements.txt       # Pinned Python dependencies
+  README.md
+  refresh_registry.sh
+  requirements.txt
+
+  # Docker-related files
+  Dockerfile.backend     # Image for backend FastAPI service
+  Dockerfile.ui          # Image for Streamlit UI
+  Dockerfile.mcp         # Image for MCP Streamable HTTP server
+  docker-compose.yml     # Local/dev docker-compose (uses .env)
+  docker-compose.prod.yml# Example production compose (uses real env vars)
+  config_prod.sh         # Example script to export prod env vars (no secrets)
 ```
 
 ---
 
 ## Prerequisites
 
-* Python 3.10+
-* A Sisense Fusion deployment (or multiple, for migration use cases)
-* Access to at least one LLM provider:
-
-  * Azure OpenAI **or**
-  * Databricks Model Serving
+- Python 3.10+
+- A Sisense Fusion deployment (or multiple, for migration use cases)
+- Access to at least one LLM provider:
+  - Azure OpenAI, or
+  - Databricks Model Serving
+- (Optional but recommended) Docker + Docker Compose for containerized runs
 
 ---
 
 ## Environment configuration
 
 This project keeps **LLM credentials and service configuration** in environment variables.  
-Sisense base URLs and tokens are always entered directly into the Streamlit UI and stored only in session state for the current browser session.
+Sisense base URLs and tokens are entered directly into the Streamlit UI and stored only in session state for the current browser session.
 
-### LLM and backend configuration (.env or environment variables)
+For local development you can use a `.env` file (see [`.env.example`](./.env.example)).  
+In Docker / production, you should set the same values as real environment variables on each container (for example via `--env-file`, `docker-compose` `env_file:`, or sourcing `config_prod.sh`).
 
-Common:
+### 1) UI (Streamlit) configuration
 
-* `LLM_PROVIDER` – which backend to use, e.g. `azure` or `databricks`.
-* `ALLOW_SUMMARIZATION` – `true` or `false` (default `true`). When `false`, tool results are not sent back to the LLM for summarisation.
+Read by `frontend/app.py`:
 
-When using **Azure OpenAI** (`LLM_PROVIDER=azure`):
+- `FES_LOG_LEVEL`  
+  Log level for the UI process: `DEBUG`, `INFO`, `WARNING`, `ERROR`.
 
-* `AZURE_OPENAI_ENDPOINT`
-* `AZURE_OPENAI_DEPLOYMENT`
-* `AZURE_OPENAI_API_KEY`
-* `AZURE_OPENAI_API_STYLE` (usually `v1`)
-* `AZURE_OPENAI_API_VERSION` (optional; defaults in code)
+- `FES_BACKEND_URL`  
+  URL of the backend FastAPI server that the UI calls for each turn.  
+  Example: `http://localhost:8001`
 
-When using **Databricks** (`LLM_PROVIDER=databricks`):
+- `FES_UI_IDLE_TIMEOUT_HOURS`  
+  Idle timeout in hours for a Streamlit session. When exceeded, the UI clears `st.session_state`.
 
-* `DATABRICKS_HOST`      – e.g. `https://<workspace-url>`
-* `DATABRICKS_TOKEN`     – personal access token
-* `LLM_ENDPOINT`         – model serving endpoint name for the LLM
+- `FES_ALLOW_SUMMARIZATION_TOGGLE`  
+  Controls whether the “Allow summarization” checkbox is enabled in the UI.  
+  - `true`  → user can toggle per session  
+  - `false` → checkbox is disabled and always off
 
-MCP HTTP client (backend → MCP server):
+### 2) Backend (FastAPI) configuration
 
-* `PYSISENSE_MCP_HTTP_URL` – base URL for `mcp_server/http_server.py` (default `http://localhost:8002`)
-* `PYSISENSE_MCP_HTTP_TIMEOUT` – timeout in seconds (optional; default `60`)
+Read by `backend/api_server.py` and `backend/agent/llm_agent.py`:
 
-Summarisation/privacy:
+- `FES_LOG_LEVEL`  
+  Same as UI; controls backend logging.
 
-* `ALLOW_SUMMARIZATION` – as above, controls whether tool results are sent to the LLM.
+- `ALLOW_SUMMARIZATION`  
+  Backend hard kill switch for sending tool results (Sisense data) to the LLM.  
+  - `true`  → allowed (subject to UI toggle)  
+  - `false` → never sent to the LLM
 
-### Sisense configuration (entered in the UI, not .env)
+- `LLM_PROVIDER`  
+  Which LLM backend to use: `azure` or `databricks`.
+
+Azure OpenAI (when `LLM_PROVIDER=azure`):
+
+- `AZURE_OPENAI_ENDPOINT`
+- `AZURE_OPENAI_DEPLOYMENT`
+- `AZURE_OPENAI_API_KEY`
+- `AZURE_OPENAI_API_STYLE` (usually `v1`)
+
+Databricks (when `LLM_PROVIDER=databricks`):
+
+- `DATABRICKS_HOST`
+- `DATABRICKS_TOKEN`
+- `LLM_ENDPOINT`
+
+Optional LLM retry tuning:
+
+- `LLM_HTTP_MAX_RETRIES`
+- `LLM_HTTP_RETRY_BASE_DELAY`
+
+### 3) Backend → MCP client configuration
+
+Read by `backend/agent/mcp_client.py`:
+
+- `PYSISENSE_MCP_HTTP_URL`  
+  Base URL for the MCP Streamable HTTP server. The client calls `/mcp/` under this base URL.
+
+- `PYSISENSE_MCP_HTTP_TIMEOUT`  
+  Timeout (seconds) for MCP calls. For migrations, keep this high.
+
+- `MCP_HTTP_MAX_RETRIES` and `MCP_HTTP_RETRY_BASE_DELAY`  
+  Retry tuning for MCP calls. Recommended to keep retries low for long-running / non-idempotent tools.
+
+### 4) MCP tool server / PySisense configuration
+
+Read by `mcp_server/tools_core.py` and `mcp_server/server.py`:
+
+- `PYSISENSE_REGISTRY_PATH`  
+  Path to the tools registry JSON.  
+  Default: `config/tools.registry.with_examples.json`
+
+- `ALLOW_MODULES`  
+  Optional comma-separated list of modules to expose.  
+  Example: `ALLOW_MODULES=access,datamodel`
+
+- `PYSISENSE_SDK_DEBUG`  
+  Optional flag passed down to `SisenseClient.from_connection(debug=...)`.  
+  Set to `true` or `false`. Recommended: unset (or `false`) for normal use.
+
+#### MCP tool naming (Claude compatibility)
+
+- `MCP_TOOL_NAME_MODE`  
+  Claude Desktop rejects tool names that contain `.` during tools/list discovery.  
+  - `claude` → publish underscore tool names (recommended)  
+  - `canonical` → publish dotted tool ids (legacy)
+
+The server will still accept both underscore and dotted names on tool calls.
+
+#### Concurrency caps (single-worker friendly)
+
+These reduce head-of-line blocking with long-running migrations while keeping the MCP server at a single worker:
+
+- `PYSISENSE_MAX_CONCURRENT_MIGRATIONS` (default: `1`)  
+  Max number of migrations allowed to run concurrently.
+
+- `PYSISENSE_MAX_CONCURRENT_READ_TOOLS` (default: `5`)  
+  Max number of short/read tools allowed to run concurrently while migrations run.
+
+### 5) Sisense configuration (entered in the UI, not in `.env`)
 
 In **Chat with deployment** mode:
-
-* `Sisense domain` (base URL)
-* `API token`
-* `Verify SSL` flag
+- Sisense domain (base URL)
+- API token
+- Verify SSL flag
 
 In **Migrate between deployments** mode:
+- Source domain + source API token (+ source SSL flag)
+- Target domain + target API token (+ target SSL flag)
 
-* `Source domain` + `Source API token` (+ `Verify SSL` for source)
-* `Target domain` + `Target API token` (+ `Verify SSL` for target)
-
-These are supplied via the Streamlit forms and held in memory only.
+These credentials are supplied via the Streamlit forms, used to build `SisenseClient` instances inside the MCP tool server, and are not persisted.
 
 ---
 
@@ -205,130 +275,216 @@ The MCP server uses a **tool registry JSON** that describes available tools, par
 There are two stages:
 
 1. `config/tools.registry.json` – built directly from the PySisense SDK.
-2. `config/tools.registry.with_examples.json` – same registry but with LLM-generated examples per tool.
+2. `config/tools.registry.with_examples.json` – the same registry but enriched with examples.
 
-The scripts in `scripts/` are responsible for this:
+Scripts in [`scripts/`](./scripts/) are responsible for this:
 
-1. `01_build_registry_from_sdk.py`  
-   Introspects the PySisense SDK classes (`AccessManagement`, `DataModel`, `Dashboard`, `Migration`, `WellCheck`), parses their docstrings, infers JSON Schemas for parameters, tags tools, and writes `config/tools.registry.json`.
+1. [`01_build_registry_from_sdk.py`](./scripts/01_build_registry_from_sdk.py)  
+   Introspects the PySisense SDK classes, parses docstrings, infers JSON Schemas for parameters, tags tools, and writes `config/tools.registry.json`.
 
-2. `02_add_llm_examples_to_registry.py`  
-   Reads `config/tools.registry.json`, uses an LLM to generate 2–3 realistic examples per tool, and writes `config/tools.registry.with_examples.json`. The backend uses this file to expose tools (parameters and descriptions) to the LLM, but examples are currently not used for tool selection at runtime.
+2. [`02_add_llm_examples_to_registry.py`](./scripts/02_add_llm_examples_to_registry.py)  
+   Reads `config/tools.registry.json`, uses an LLM to generate examples per tool, and writes `config/tools.registry.with_examples.json`.
 
-The helper script `refresh_registry.sh`:
+[`refresh_registry.sh`](./refresh_registry.sh) is a convenience wrapper to rebuild both registries.
 
-* Ensures it is running in the correct git repo/branch.
-* Pulls the latest PySisense SDK and this project.
-* Runs the two scripts above to refresh both registry files.
-
-At runtime, only the JSON files in `config/` are needed; the full PySisense repo is not required on the server.
+At runtime, only the JSON files in `config/` are needed.
 
 ---
 
-## Running locally
+## Running locally (without Docker)
 
-Below is a simple three-process dev setup. Commands may be adjusted to match how you prefer to run FastAPI (direct `python` vs `uvicorn`).
+This is a simple three-process dev setup.
 
-1. **Create and activate a virtual environment**
+1) Create and activate a virtual environment
 
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate     # On Windows: .venv\Scriptsctivate
-   ```
+```bash
+python -m venv .venv
+source .venv/bin/activate     # Windows: .venv\Scripts\activate
+```
 
-2. **Install dependencies**
+2) Install dependencies
 
-   ```bash
-   pip install --upgrade pip
-   pip install -r requirements.txt
-   ```
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+```
 
-3. **Create a `.env` with LLM and service configuration**
+3) Create a `.env` (see [`.env.example`](./.env.example))
 
-   Populate the variables described in the **Environment configuration** section.
+4) Start the MCP Streamable HTTP server
 
-4. **Start the MCP HTTP server**
+In terminal 1:
 
-   In terminal 1:
+```bash
+uvicorn mcp_server.server:app --host 0.0.0.0 --port 8002 --workers 1
+```
 
-   ```bash
-   python -m mcp_server.http_server
-   ```
+Why `--workers 1`:
+- MCP Streamable HTTP sessions are stateful, and running multiple workers can break session continuity unless you add sticky routing.
+- This project relies on a single worker and uses concurrency caps + thread offload to stay responsive during long migrations.
 
-   or equivalently, if you prefer `uvicorn`:
+5) Start the backend API
 
-   ```bash
-   uvicorn mcp_server.http_server:app --host 0.0.0.0 --port 8002
-   ```
+In terminal 2:
 
-5. **Start the backend API**
+```bash
+uvicorn backend.api_server:app --host 0.0.0.0 --port 8001
+```
 
-   In terminal 2:
+6) Start the Streamlit UI
 
-   ```bash
-   python -m backend.api_server
-   ```
+In terminal 3:
 
-   or:
+```bash
+streamlit run frontend/app.py
+```
 
-   ```bash
-   uvicorn backend.api_server:app --host 0.0.0.0 --port 8001
-   ```
+7) Open the UI
 
-6. **Start the Streamlit UI**
+Streamlit will print a local URL (typically `http://localhost:8501`).
 
-   In terminal 3:
+---
 
-   ```bash
-   streamlit run frontend/app.py
-   ```
+## Claude Desktop Integration (MCP Remote)
 
-7. **Open the UI**
+You can connect Claude Desktop directly to the PySisense MCP HTTP server using `mcp-remote`.
 
-   Streamlit will print a local URL (typically `http://localhost:8501`).  
-   Open this in your browser. The UI will:
+### 1) Start the MCP server
 
-   * Ping the backend `/health` endpoint.
-   * Fetch the visible tool list from `/tools`.
-   * Send chat turns to `/agent/turn`.
+Make sure the MCP server is running:
+
+```bash
+uvicorn mcp_server.server:app --host 0.0.0.0 --port 8002 --workers 1
+```
+
+### 2) Configure Claude Desktop
+
+Steps:
+1. Open Claude Desktop.
+2. Go to Settings.
+3. Under **Developer**, select **Edit Config**. This opens `claude_desktop_config.json`.
+4. Add the following configuration:
+
+```json
+{
+  "mcpServers": {
+    "my-local-server": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://localhost:8002/mcp/"]
+    }
+  }
+}
+```
+
+Restart Claude Desktop after saving the file.
+
+### 3) Avoid exposing Sisense credentials in Claude
+
+To avoid putting your Sisense domain/token inside Claude, set them as environment variables on the machine where the MCP server is running (for example in that machine’s `.env`).
+
+The MCP server’s tools_core.py includes optional default-tenant fallback logic that fills in the Sisense domain and token from environment variables when the client omits them, before invoking the underlying SDK method.
+
+Add these env vars on the MCP server host:
+
+```bash
+PYSISENSE_USE_DEFAULT_TENANT=true
+PYSISENSE_DEFAULT_DOMAIN="https://your-sisense-domain"
+PYSISENSE_DEFAULT_TOKEN="your-api-token"
+PYSISENSE_DEFAULT_SSL=false
+```
+
+Important: You do not need to tell Claude first time to “send empty strings for Sisense connection fields like domain and token" along with your regular action prompt. If default-tenant fallback is enabled on the MCP server, Claude can call tools without providing those fields, and the server will fill them in from its environment configuration.
+
+Note: This is a convenience for local/internal use. A future version may replace this with a more explicit, user-scoped auth/connection flow (so you do not rely on server-side default credentials).
+
+---
+
+## Running with Docker (local/dev)
+
+The repo includes three Dockerfiles and a `docker-compose.yml` for local development:
+
+- [`Dockerfile.ui`](./Dockerfile.ui) – Streamlit UI
+- [`Dockerfile.backend`](./Dockerfile.backend) – FastAPI backend
+- [`Dockerfile.mcp`](./Dockerfile.mcp) – MCP tool server
+- [`docker-compose.yml`](./docker-compose.yml) – runs all three together
+
+### 1) Create a `.env` for local Docker
+
+Create a `.env` in the project root with your LLM and service configuration (same keys as in the Environment configuration section).  
+This file is not committed to git and is not baked into images.
+
+### 2) Build and start the stack
+
+From the project root:
+
+```bash
+docker compose up --build --force-recreate
+```
+
+Then open:
+
+- UI: `http://localhost:8501`
+- Backend docs: `http://localhost:8001/docs`
+- MCP health: `http://localhost:8002/health`
+
+### Useful Docker commands
+
+Stop the stack:
+
+```bash
+docker compose down
+```
+
+Hard reset (remove containers, images, volumes, and build cache):
+
+```bash
+docker compose down --rmi all --volumes --remove-orphans
+docker builder prune -a -f
+```
+
+---
+
+## Production-style deployment (example)
+
+For production you typically:
+
+- Push built images to a registry (Docker Hub, ECR, etc.)
+- Use a separate compose file (for example [`docker-compose.prod.yml`](./docker-compose.prod.yml))
+- Set environment variables on the host or via your orchestrator
+
+An example non-secret env script is included: [`config_prod.sh`](./config_prod.sh).
+
+Secrets like `AZURE_OPENAI_API_KEY` or `DATABRICKS_TOKEN` should be provided via a secure channel (SSM Parameter Store, Secrets Manager, etc.).
 
 ---
 
 ## Using the app
 
-### 1. Chat with deployment
+### 1) Chat with deployment
 
-* Select **Chat with deployment** in the mode toggle.
-* Enter:
+- Select **Chat with deployment**.
+- Enter Sisense domain, API token, and SSL preference.
+- Click **Connect**.
 
-  * Sisense domain
-  * API token
-  * SSL verification preference
+Example questions:
 
-* Click **Connect**.
+- “List all dashboards.”
+- “Show all users in the ‘Analysts’ group.”
+- “Find all fields that are not used in datamodel XYZ.”
 
-Once connected, you can ask questions like:
+For write operations (create/update/delete), you will see a confirmation step before execution.
 
-* “List all dashboards.”
-* “Show all users in the ‘Analysts’ group.”
-* “Find all the fields that are not used for analytic from 'XYZ' datamodels.”
+### 2) Migrate between deployments
 
-For read operations, the agent calls non-mutating tools and summarises the results.  
-For write operations (create/update/delete), you will see a **confirmation step** before anything is executed.
+- Switch to **Migrate between deployments**.
+- Fill in Source and Target Sisense environments (domain + token + SSL).
+- Connect both.
 
-### 2. Migrate between deployments
+Example requests:
 
-* Switch to **Migrate between deployments**.
-* Fill in **Source** and **Target** Sisense environments (domain + API token + SSL choice).
-* Connect both.
-
-You can then ask for operations like:
-
-* “Migrate this dashboard from source to target.”
-* “Migrate all datamodels, overwriting existing ones.”
-* “Migrate these three dashboards and duplicate them on target.”
-
-The agent uses migration tools and always presents a plan before running mutating steps.
+- “Migrate this dashboard from source to target.”
+- “Migrate all datamodels, overwriting existing ones.”
+- “Migrate these three dashboards and duplicate them on target.”
 
 Screenshots:
 
@@ -340,26 +496,28 @@ Screenshots:
 
 ## Logging
 
-The project uses Python’s logging module rather than `print`.
-
-* Log files are written under `logs/` (git-ignored).
-* Sensitive values such as tokens are scrubbed before being written to logs where possible.
-* For production, you should set log levels to `INFO` or `WARNING` instead of `DEBUG`.
+- Log files are written under `logs/` (git-ignored).
+- Sensitive values such as tokens are scrubbed before being written to logs where possible.
+- For production, set log levels to `INFO` or `WARNING` instead of `DEBUG`.
 
 ---
 
-## Security and deployment notes (high level)
+## Security and deployment notes
 
 This codebase is designed as an internal tool and is not production-hardened by default.
+
+- Put the UI + backend behind your organization’s authentication/SSO.
+- Lock access to Sisense tokens and LLM API keys.
+- Consider network-level restrictions so only trusted hosts can reach the backend and MCP server.
 
 ---
 
 ## Related project
 
-* [PySisense](https://github.com/sisense/pysisense) – the unofficial Python SDK for Sisense Fusion APIs. This project uses PySisense for all Sisense-side actions and leverages its docs and examples to build the MCP tool registry.
+- [PySisense](https://github.com/sisense/pysisense) – the unofficial Python SDK for Sisense Fusion APIs. This project uses PySisense for Sisense-side actions and leverages its docs/examples to build the MCP tool registry.
 
 ---
 
 ## License
 
-This project is licensed under the MIT License. See the `LICENSE` file for details.
+This project is licensed under the MIT License. See the [`LICENSE`](./LICENSE) file for details.

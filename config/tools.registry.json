@@ -775,7 +775,7 @@
         "datamodel_name"
       ]
     },
-    "mutates": true,
+    "mutates": false,
     "tags": [
       "datamodel",
       "write"

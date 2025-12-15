@@ -11,6 +11,19 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+# --------------------------------------------------
+# Env loading (local dev only; safe for Docker/prod)
+# --------------------------------------------------
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
+
+if load_dotenv is not None:
+    env_path = ROOT_DIR / ".env"
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path, override=True)
+
 import json
 import logging
 import os
@@ -27,17 +40,20 @@ from logging.handlers import RotatingFileHandler
 # ------------------------------
 # Logging setup
 # ------------------------------
-log_level = "debug"  # <- change to "info", "warning", etc. as you like
+LOG_LEVEL_ENV_VAR = "FES_LOG_LEVEL"
+DEFAULT_LOG_LEVEL = "INFO"
+
+log_level_name = os.getenv(LOG_LEVEL_ENV_VAR, DEFAULT_LOG_LEVEL).upper()
+log_level = getattr(logging, log_level_name, logging.INFO)
 
 LOG_DIR = ROOT_DIR / "logs"
-LOG_DIR.mkdir(exist_ok=True)
+try:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+except FileExistsError:
+    pass
 
 logger = logging.getLogger("app")
-
-level = getattr(logging, log_level.upper(), logging.INFO)
-logger.setLevel(level)
-
-# Do not spam console
+logger.setLevel(log_level)
 logger.propagate = False
 
 if not any(isinstance(h, RotatingFileHandler) for h in logger.handlers):
@@ -47,21 +63,38 @@ if not any(isinstance(h, RotatingFileHandler) for h in logger.handlers):
         backupCount=5,              # keep 5 old files
         encoding="utf-8",
     )
-    fh.setLevel(level)
+    fh.setLevel(log_level)
     fmt = logging.Formatter(
         "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
     )
     fh.setFormatter(fmt)
     logger.addHandler(fh)
-logger.info("App logger initialized at level %s", log_level.upper())
 
+logger.info(
+    "App logger initialized at level %s (env var %s)",
+    log_level_name,
+    LOG_LEVEL_ENV_VAR,
+)
+
+# ------------------------------
+# Summarization policy (UI permission)
+# ------------------------------
+ALLOW_SUMMARIZATION_TOGGLE_ENV_VAR = "FES_ALLOW_SUMMARIZATION_TOGGLE"
+raw_toggle = os.getenv(ALLOW_SUMMARIZATION_TOGGLE_ENV_VAR, "true")
+ALLOW_SUMMARIZATION_TOGGLE = raw_toggle.lower() == "true"
+
+logger.debug(
+    "Summarization toggle allowed: %s (env %s=%r)",
+    ALLOW_SUMMARIZATION_TOGGLE,
+    ALLOW_SUMMARIZATION_TOGGLE_ENV_VAR,
+    raw_toggle,
+)
 
 # ------------------------------
 # Backend API URL
 # ------------------------------
 BACKEND_URL = os.getenv("FES_BACKEND_URL", "http://localhost:8001")
-logger.info("Using BACKEND_URL=%s", BACKEND_URL)
-
+logger.debug("Using BACKEND_URL=%s", BACKEND_URL)
 
 # ------------------------------
 # UI session idle timeout (hours)
@@ -133,7 +166,6 @@ def call_backend_turn(
         "allow_summarization": allow_summarization,
         "mode": mode,
     }
-
     logger.info(
         "Calling backend /agent/turn (mode=%s, session_id=%s)",
         mode,
@@ -160,7 +192,7 @@ def fetch_tools_from_backend():
     Fetch OpenAI-style tools and registry metadata from the backend.
     """
     url = f"{BACKEND_URL}/tools"
-    logger.info("Fetching tools from backend: %s", url)
+    logger.debug("Fetching tools from backend: %s", url)
 
     try:
         resp = requests.get(url, timeout=30)
@@ -202,7 +234,7 @@ def fetch_tools_from_backend():
         st.error("Backend /tools returned registry in an unexpected format.")
         st.stop()
 
-    logger.info(
+    logger.debug(
         "Loaded %d tools and %d registry entries from backend",
         len(tools),
         len(registry),
@@ -296,18 +328,40 @@ session_id = st.session_state[SESSION_ID_KEY]
 with st.sidebar:
     st.markdown("""
     <div style="font-weight: 700; font-size: 1.1rem; margin-top: 10px;">
-        <span style="color:#FF0000; margin-right:12px;">🔒</span> Privacy & Controls
+        Privacy & Controls
     </div>
     """, unsafe_allow_html=True)
 
-    allow = st.checkbox(
-        "Allow summarization (Sisense data will be sent to the LLM)",
-        key="allow_summarization",
-        help=(
-            "When enabled, Sisense data will be sent to the LLM provider for summarization. "
-            "This may include sensitive information, so enable only if you trust the LLM provider."
-        ),
-    )
+    # Initialize once (safe default: False)
+    if "allow_summarization" not in st.session_state:
+        st.session_state["allow_summarization"] = False
+
+    if ALLOW_SUMMARIZATION_TOGGLE:
+        # User is allowed to control it
+        st.checkbox(
+            "Allow summarization (Sisense data will be sent to the LLM)",
+            key="allow_summarization",
+            help=(
+                "When enabled, Sisense data will be sent to the LLM provider for summarization. "
+                "This may include sensitive information, so enable only if you trust the LLM provider."
+            ),
+        )
+    else:
+        # Admin has disabled the ability to enable summarization
+        st.session_state["allow_summarization"] = False
+
+        st.checkbox(
+            "Allow summarization (disabled by admin)",
+            key="allow_summarization",
+            disabled=True,
+            help=(
+                "Summarization has been disabled in the server configuration. "
+                "Sisense data will not be sent to the LLM."
+            ),
+        )
+        st.caption(
+            "Summarization is disabled by the administrator."
+        )
 
 # ------------------------------
 # Mode selection: Chat vs Migration
@@ -326,7 +380,7 @@ mode = st.radio(
     label_visibility="collapsed",
 )
 
-logger.info("Current mode: %s", mode)
+logger.debug("Current mode: %s", mode)
 
 # ------------------------------
 # Load tools once (for display/metadata)
@@ -336,13 +390,13 @@ if "tools" not in st.session_state or "tool_registry" not in st.session_state:
     st.session_state.tools = tools
     st.session_state.tool_registry = registry
 
-    logger.info(
+    logger.debug(
         "Loaded TOOL_REGISTRY with %d tools: %s",
         len(registry),
         list(registry.keys()),
     )
 
-    logger.info(
+    logger.debug(
         "Tools fetched from backend (for display/metadata): %d tools: %s",
         len(st.session_state.tools),
         [t["function"]["name"] for t in st.session_state.tools],
@@ -375,7 +429,7 @@ if "chat_tools" not in st.session_state or "migration_tools" not in st.session_s
         if name in tools_by_name
     ]
 
-    logger.info(
+    logger.debug(
         "Per-mode tools (for display): chat_tools=%d, migration_tools=%d",
         len(st.session_state.chat_tools),
         len(st.session_state.migration_tools),
@@ -450,7 +504,6 @@ if mode == MODE_CHAT:
     chat_tenant_config = st.session_state[CHAT_TENANT_KEY]
 
     # Session state init for chat messages.
-    # NOTE: System prompts now live in the backend; this history is purely
     # for UI display and giving the backend prior turns if/when needed.
     if CHAT_MESSAGES_KEY not in st.session_state:
         st.session_state[CHAT_MESSAGES_KEY] = [
@@ -459,7 +512,7 @@ if mode == MODE_CHAT:
                 "content": "Hi! Ask me about your Sisense deployment.",
             },
         ]
-        logger.info(
+        logger.debug(
             "[CHAT] Chat history initialized with greeting only "
             "(system prompt handled in backend)."
         )
@@ -533,11 +586,6 @@ if mode == MODE_CHAT:
     for i, msg in enumerate(st.session_state[CHAT_MESSAGES_KEY]):
         if msg["role"] not in ("user", "assistant"):
             continue
-        # if (
-        #     st.session_state[CHAT_HIDE_USER_IDX_KEY] is not None
-        #     and i == st.session_state[CHAT_HIDE_USER_IDX_KEY]
-        # ):
-        #     continue
         with st.chat_message(msg["role"]):
             # For assistant turns, render result first, then the narrative summary
             if msg["role"] == "assistant":
@@ -627,7 +675,7 @@ if mode == MODE_CHAT:
 
     if user_input:
         # Log user question
-        logger.info("[CHAT] User question: %s", user_input)
+        logger.debug("[CHAT] User question: %s", user_input)
 
         # Remember this user's turn index, append to history, and render
         st.session_state[CHAT_LAST_USER_IDX_KEY] = len(
@@ -935,7 +983,7 @@ if mode == MODE_MIGRATION:
                 ),
             },
         ]
-        logger.info(
+        logger.debug(
             "[MIGRATION] Chat history initialized with greeting only "
             "(system prompt handled in backend)."
         )
@@ -1037,7 +1085,7 @@ if mode == MODE_MIGRATION:
     mig_input = st.chat_input("Describe what you want to migrate...")
 
     if mig_input:
-        logger.info("[MIGRATION] User request: %s", mig_input)
+        logger.debug("[MIGRATION] User request: %s", mig_input)
         st.session_state[MIG_LAST_USER_IDX_KEY] = len(
             st.session_state[MIG_MESSAGES_KEY]
         )
