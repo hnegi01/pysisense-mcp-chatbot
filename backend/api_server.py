@@ -1,16 +1,30 @@
 """
 FastAPI HTTP API for the FES Assistant backend.
 
-- Exposes health, tools, and /agent/turn endpoints for the Streamlit UI (or any client).
-- Loads the shared PySisense tool registry via llm_agent and selects tools per mode (chat/migration).
-- Bridges UI requests into backend.runtime.run_turn_once and returns the LLM reply + last tool result.
+Responsibilities
+----------------
+- Expose health, tools, and /agent/turn endpoints (for Streamlit UI or any client).
+- Load the shared tool registry via backend.agent.llm_agent and select tools per mode:
+  - chat: non-migration tools
+  - migration: migration tools only
+- Enforce summarization policy at the backend layer.
+- Bridge each UI request into backend.runtime.run_turn_once.
+- Support both JSON and SSE responses on /agent/turn based on the Accept header.
+
+Notes
+-----
+- The UI sends the full conversation history in `messages`.
+- Tool execution + LLM orchestration happen inside call_llm_with_tools (via runtime).
+- For SSE: progress events are pushed via runtime's progress callback mechanism.
 """
-import os
+
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+import os
 
 # -----------------------------------------------------------------------------
-# Env loading (local/dev only; safe for Docker/prod)
+# Optional .env loading (local/dev only; safe for Docker/prod)
 # -----------------------------------------------------------------------------
 try:
     from dotenv import load_dotenv
@@ -19,21 +33,24 @@ except ImportError:
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 
-
 if load_dotenv is not None:
     env_path = ROOT_DIR / ".env"
     if env_path.exists():
         load_dotenv(dotenv_path=env_path, override=True)
 
+import asyncio
+import contextlib
+import json
 import logging
 from logging.handlers import RotatingFileHandler
+from typing import Any, AsyncIterator, Dict, List, Optional, Set, Tuple
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
+from starlette.responses import StreamingResponse
 
 from backend.runtime import run_turn_once
-import backend.agent.llm_agent as chat_client
-from backend.agent import llm_agent as llm_tool
+from backend.agent import llm_agent
 
 
 # -----------------------------------------------------------------------------
@@ -42,46 +59,60 @@ from backend.agent import llm_agent as llm_tool
 LOG_LEVEL_ENV_VAR = "FES_LOG_LEVEL"
 DEFAULT_LOG_LEVEL = "INFO"
 
-log_level_name = os.getenv(LOG_LEVEL_ENV_VAR, DEFAULT_LOG_LEVEL).upper()
-log_level = getattr(logging, log_level_name, logging.INFO)
-
 LOG_DIR = ROOT_DIR / "logs"
-try:
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-except FileExistsError:
-    pass
+LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 logger = logging.getLogger("backend.api")
-logger.setLevel(log_level)
-logger.propagate = False
 
-if not any(isinstance(h, RotatingFileHandler) for h in logger.handlers):
+
+def _setup_logger() -> None:
+    """
+    Configure a rotating file logger for the API layer.
+
+    Notes
+    -----
+    This function is idempotent and avoids adding duplicate handlers.
+    """
+    log_level_name = os.getenv(LOG_LEVEL_ENV_VAR, DEFAULT_LOG_LEVEL).upper()
+    log_level = getattr(logging, log_level_name, logging.INFO)
+
+    logger.setLevel(log_level)
+    logger.propagate = False
+
+    if any(isinstance(h, RotatingFileHandler) for h in logger.handlers):
+        logger.info(
+            "backend.api logger already configured at level %s (env %s)",
+            log_level_name,
+            LOG_LEVEL_ENV_VAR,
+        )
+        return
+
     fh = RotatingFileHandler(
         LOG_DIR / "backend_api.log",
-        maxBytes=10 * 1024 * 1024,  # 10 MB per file
-        backupCount=5,              # keep 5 old files
+        maxBytes=10 * 1024 * 1024,
+        backupCount=5,
         encoding="utf-8",
     )
     fh.setLevel(log_level)
-    fmt = logging.Formatter(
-        "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
-    )
+    fmt = logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
     fh.setFormatter(fmt)
     logger.addHandler(fh)
 
-logger.info(
-    "backend.api logger initialized at level %s (env %s)",
-    log_level_name,
-    LOG_LEVEL_ENV_VAR,
-)
+    logger.info(
+        "backend.api logger initialized at level %s (env %s)",
+        log_level_name,
+        LOG_LEVEL_ENV_VAR,
+    )
+
+
+_setup_logger()
+
 
 # -----------------------------------------------------------------------------
 # Summarization policy (backend enforcement)
 # -----------------------------------------------------------------------------
 ALLOW_SUMMARIZATION_TOGGLE_ENV_VAR = "FES_ALLOW_SUMMARIZATION_TOGGLE"
-ALLOW_SUMMARIZATION_TOGGLE = os.getenv(
-    ALLOW_SUMMARIZATION_TOGGLE_ENV_VAR, "true"
-).lower() == "true"
+ALLOW_SUMMARIZATION_TOGGLE = os.getenv(ALLOW_SUMMARIZATION_TOGGLE_ENV_VAR, "true").strip().lower() == "true"
 
 logger.info(
     "Summarization toggle allowed (backend): %s (env %s)",
@@ -95,41 +126,42 @@ logger.info(
 # -----------------------------------------------------------------------------
 def _select_tools_for_mode(mode: Optional[str]) -> List[Dict[str, Any]]:
     """
-    Load tools from the registry and return only those relevant for the given mode.
+    Load tools from the shared registry and return those relevant for the given mode.
 
-    - mode == "migration": only tools whose registry row has module == "migration"
-    - any other mode (including None / "chat"): all non-migration tools
+    Parameters
+    ----------
+    mode
+        Logical mode: "chat" or "migration" (defaults to "chat" if None/unknown).
 
-    If filtering yields an empty list (e.g. registry missing modules), we fall back
-    to all tools so the agent is still usable.
+    Returns
+    -------
+    list of dict
+        OpenAI-style tool definitions.
+
+    Notes
+    -----
+    - mode == "migration": return only tools where registry meta module == "migration"
+    - otherwise: return tools where registry meta module != "migration"
+
+    If filtering yields an empty list (e.g., registry missing metadata), fall back
+    to returning all tools to keep the agent usable.
     """
-    # This populates TOOL_REGISTRY as a side-effect
-    all_tools = llm_tool.load_tools_for_llm()
-    registry = getattr(llm_tool, "TOOL_REGISTRY", {}) or {}
+    all_tools = llm_agent.load_tools_for_llm()
+    registry = getattr(llm_agent, "TOOL_REGISTRY", {}) or {}
 
-    tools_by_name = {t["function"]["name"]: t for t in all_tools}
-    mode_normalized = (mode or "chat").lower()
+    tools_by_name: Dict[str, Dict[str, Any]] = {t["function"]["name"]: t for t in all_tools}
+    mode_normalized = (mode or "chat").strip().lower()
 
     if mode_normalized == "migration":
-        allowed_names = [
-            tid
-            for tid, meta in registry.items()
-            if meta.get("module") == "migration"
-        ]
+        allowed_names = [tool_id for tool_id, meta in registry.items() if meta.get("module") == "migration"]
     else:
-        # Default: chat mode -> everything that is not in the "migration" module
-        allowed_names = [
-            tid
-            for tid, meta in registry.items()
-            if meta.get("module") != "migration"
-        ]
+        allowed_names = [tool_id for tool_id, meta in registry.items() if meta.get("module") != "migration"]
 
     selected = [tools_by_name[name] for name in allowed_names if name in tools_by_name]
 
     if not selected:
         logger.warning(
-            "No tools selected for mode=%s (registry entries=%d, all_tools=%d). "
-            "Falling back to all tools.",
+            "No tools selected for mode=%s (registry entries=%d, total tools=%d). Falling back to all tools.",
             mode_normalized,
             len(registry),
             len(all_tools),
@@ -147,43 +179,78 @@ def _select_tools_for_mode(mode: Optional[str]) -> List[Dict[str, Any]]:
 
 
 # -----------------------------------------------------------------------------
+# SSE helpers
+# -----------------------------------------------------------------------------
+def _sse_pack(data: Dict[str, Any], event: str = "message") -> str:
+    """
+    Format one SSE event frame.
+
+    Parameters
+    ----------
+    data
+        JSON-serializable payload.
+    event
+        SSE event name.
+
+    Returns
+    -------
+    str
+        SSE frame:
+          event: <event>
+          data: <json>
+    """
+    try:
+        payload = json.dumps(data, ensure_ascii=False, default=str)
+    except Exception:
+        payload = json.dumps({"ok": False, "error": "Failed to JSON encode SSE payload."})
+    return f"event: {event}\n" f"data: {payload}\n\n"
+
+
+# -----------------------------------------------------------------------------
 # Pydantic models
 # -----------------------------------------------------------------------------
 class AgentTurnRequest(BaseModel):
     """
     Payload sent from the UI (Streamlit or any client) to /agent/turn.
     """
+
     messages: List[Dict[str, Any]]
     user_input: str = ""
 
+    # Client may send tools, but server selects tools per mode from registry.
     tools: List[Dict[str, Any]] = []
 
-    # Chat mode: single Sisense deployment
+    # Chat mode: single Sisense deployment config
     tenant_config: Optional[Dict[str, Any]] = None
 
-    # Migration mode: source/target Sisense deployments
+    # Migration mode: source/target deployment config
     migration_config: Optional[Dict[str, Any]] = None
 
-    # Approved mutating tool calls (same shape as _approval_key output)
+    # Approved mutating tool calls (keyed by (tool_id, call_id) or similar)
     approved_keys: Optional[List[Tuple[str, str]]] = None
 
     # Long-lived session identifier from the UI
     session_id: str
 
-    # Per-turn summarization flag from the UI
+    # Per-turn summarization flag requested by the client
     allow_summarization: Optional[bool] = None
 
-    # Logical mode: "chat" or "migration" (default "chat" for older clients)
+    # Logical mode: "chat" or "migration"
     mode: Optional[str] = "chat"
 
 
 class AgentTurnResponse(BaseModel):
     """
-    Response from the backend for a single agent turn.
+    Response for a single agent turn.
 
-    - reply: natural-language answer to show in the UI
-    - tool_result: raw/structured tool payload (table, JSON, or pending confirmation)
+    Attributes
+    ----------
+    reply
+        Natural-language assistant reply.
+    tool_result
+        The latest raw tool payload captured by llm_agent, if any.
     """
+
     reply: str
     tool_result: Optional[Dict[str, Any]] = None
 
@@ -200,95 +267,220 @@ app = FastAPI(
 
 @app.get("/health")
 def health_check() -> Dict[str, str]:
-    """Simple health endpoint to check if the backend is up."""
+    """
+    Simple health endpoint to check if the backend is up.
+    """
     return {"status": "ok"}
 
 
 @app.get("/tools")
 def list_tools() -> Dict[str, Any]:
     """
-    Returns OpenAI-style tools + JSON-safe registry metadata for the UI.
+    Return OpenAI-style tools plus a JSON-safe tool registry.
 
-    This is used by the UI for display/metadata (counts per mode, etc.).
+    This is used by the UI for display and metadata (counts per mode, etc.).
     """
-    # This should populate llm_tool.TOOL_REGISTRY
-    tools = llm_tool.load_tools_for_llm()
+    tools = llm_agent.load_tools_for_llm()
+    registry_raw = getattr(llm_agent, "TOOL_REGISTRY", {}) or {}
 
-    # Get the up-to-date registry from the module, not from a stale import
-    registry_raw = getattr(llm_tool, "TOOL_REGISTRY", {}) or {}
-
-    # Sanitize for JSON – strip out callables/clients/etc.
+    # Keep only JSON-safe fields that UI needs.
     registry_public: Dict[str, Dict[str, Any]] = {}
     for tool_id, meta in registry_raw.items():
         registry_public[tool_id] = {
             "id": meta.get("id", tool_id),
             "module": meta.get("module"),
-            "mutates": meta.get("mutates", False),
+            "mutates": bool(meta.get("mutates", False)),
             "description": meta.get("description"),
         }
 
     return {"tools": tools, "registry": registry_public}
 
 
-@app.post("/agent/turn", response_model=AgentTurnResponse)
-async def agent_turn(payload: AgentTurnRequest) -> AgentTurnResponse:
+@app.post("/agent/turn")
+async def agent_turn(request: Request, payload: AgentTurnRequest):
     """
-    Main entrypoint: run one FES agent turn.
+    Main entrypoint: run one agent turn.
 
-    This wraps backend.runtime.run_turn_once so the UI can talk to
-    the agent over HTTP.
+    Behavior
+    --------
+    - If client requests SSE via Accept: text/event-stream, respond as a stream.
+    - Otherwise, respond as JSON (backward compatible).
     """
-    # Select tools based on mode (chat vs migration) + registry metadata.
+    accept = (request.headers.get("accept") or "").lower()
+    wants_sse = "text/event-stream" in accept
+
     selected_tools = _select_tools_for_mode(payload.mode)
 
-    # User's requested flag (from UI or any client)
-    user_flag = bool(payload.allow_summarization) if payload.allow_summarization is not None else False
+    # Client requested flag
+    user_flag = payload.allow_summarization if payload.allow_summarization is not None else False
 
-    # Apply deployment-level policy: if toggle is disabled, force False
-    if not ALLOW_SUMMARIZATION_TOGGLE:
-        effective_allow = False
-    else:
-        effective_allow = user_flag
+    # Backend policy enforcement: if toggle is disabled, force False
+    effective_allow = bool(user_flag) if ALLOW_SUMMARIZATION_TOGGLE else False
+
+    approved_set: Set[Tuple[str, str]] = set(payload.approved_keys or [])
 
     logger.info(
-        "Received /agent/turn: messages=%d, mode=%s, tools_for_mode=%d, "
-        "tenant=%s, migration=%s, approvals=%d, session_id=%s, "
-        "allow_summarization=%s, effective_allow_summarization=%s",
+        "Received /agent/turn: messages=%d mode=%s tools_for_mode=%d "
+        "tenant=%s migration=%s approvals=%d session_id=%s "
+        "allow_summarization=%s effective_allow_summarization=%s wants_sse=%s",
         len(payload.messages),
         payload.mode,
         len(selected_tools),
         bool(payload.tenant_config),
         bool(payload.migration_config),
-        len(payload.approved_keys or []),
+        len(approved_set),
         payload.session_id,
-        user_flag,
-        effective_allow,
+        bool(user_flag),
+        bool(effective_allow),
+        wants_sse,
     )
 
-    try:
-        approved_set: set[Tuple[str, str]] = set(payload.approved_keys or [])
+    # -------------------------------------------------------------------------
+    # JSON path (default)
+    # -------------------------------------------------------------------------
+    if not wants_sse:
+        try:
+            reply = await run_turn_once(
+                session_id=payload.session_id,
+                messages=payload.messages,
+                user_input=payload.user_input,
+                tools=selected_tools,
+                tenant_config=payload.tenant_config,
+                approved_keys=approved_set,
+                migration_config=payload.migration_config,
+                allow_summarization=effective_allow,
+            )
 
-        reply = await run_turn_once(
-            messages=payload.messages,
-            user_input=payload.user_input,
-            tools=selected_tools,
-            tenant_config=payload.tenant_config,
-            approved_keys=approved_set,
-            migration_config=payload.migration_config,
-            session_id=payload.session_id,
-            allow_summarization=effective_allow,
-        )
+            tool_result = getattr(llm_agent, "LAST_TOOL_RESULT", None)
 
-        tool_result = getattr(chat_client, "LAST_TOOL_RESULT", None)
+            logger.info("Agent turn completed successfully (JSON).")
+            logger.debug("Reply (truncated): %s", reply[:500] if isinstance(reply, str) else repr(reply))
 
-        logger.info("Agent turn completed successfully.")
-        logger.debug(
-            "Reply (truncated): %s",
-            reply[:500] if isinstance(reply, str) else repr(reply),
-        )
+            return AgentTurnResponse(reply=reply, tool_result=tool_result)
 
-        return AgentTurnResponse(reply=reply, tool_result=tool_result)
+        except Exception as exc:
+            logger.exception("Error while handling /agent/turn (JSON): %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    except Exception as exc:
-        logger.exception("Error while handling /agent/turn: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    # -------------------------------------------------------------------------
+    # SSE path
+    # -------------------------------------------------------------------------
+    q: asyncio.Queue[Optional[Tuple[str, Dict[str, Any]]]] = asyncio.Queue()
+
+    async def _progress_cb(event: Dict[str, Any]) -> None:
+        """
+        Receives progress events from runtime.publish_progress() and forwards them to SSE.
+        """
+        try:
+            await q.put(("progress", event))
+        except Exception:
+            logger.debug("Failed to enqueue progress event; ignored.", exc_info=True)
+
+    async def _run_turn_and_publish() -> None:
+        """
+        Worker task that runs the agent turn and publishes status/progress/result into the queue.
+        """
+        try:
+            await q.put(("status", {"phase": "started"}))
+
+            reply = await run_turn_once(
+                session_id=payload.session_id,
+                messages=payload.messages,
+                user_input=payload.user_input,
+                tools=selected_tools,
+                tenant_config=payload.tenant_config,
+                approved_keys=approved_set,
+                migration_config=payload.migration_config,
+                allow_summarization=effective_allow,
+                progress_cb=_progress_cb,
+            )
+
+            tool_result = getattr(llm_agent, "LAST_TOOL_RESULT", None)
+
+            await q.put(("result", {"reply": reply, "tool_result": tool_result}))
+            await q.put(("status", {"phase": "completed"}))
+
+        except asyncio.CancelledError:
+            # Turn was cancelled (likely due to client disconnect). Emit a final status if you want.
+            logger.info("Turn cancelled (session_id=%s).", payload.session_id)
+            with contextlib.suppress(Exception):
+                await q.put(("status", {"phase": "cancelled"}))
+            raise
+
+        except Exception as exc:
+            logger.exception("Error while handling /agent/turn (SSE): %s", exc)
+            await q.put(("error", {"ok": False, "error": str(exc), "error_type": type(exc).__name__}))
+
+        finally:
+            await q.put(None)
+
+    async def _event_generator() -> AsyncIterator[str]:
+        """
+        SSE generator that drains queue items and emits SSE frames, with keepalives.
+        Also detects client disconnect and cancels the running turn.
+        """
+        turn_task = asyncio.create_task(_run_turn_and_publish())
+        keepalive_seconds = 10.0
+
+        try:
+            while True:
+                # Explicit disconnect check (refresh/close tab)
+                if await request.is_disconnected():
+                    logger.info("SSE client disconnected; cancelling turn (session_id=%s).", payload.session_id)
+
+                    # REQUIRED: notify runtime to cancel the active MCP session (which calls MCP /mcp/cancel).
+                    with contextlib.suppress(Exception):
+                        from backend import runtime as runtime_mod
+
+                        logger.info("Calling runtime.cancel_active_turn session_id=%s", payload.session_id)
+                        await runtime_mod.cancel_active_turn(payload.session_id)
+                        logger.info("runtime.cancel_active_turn returned session_id=%s", payload.session_id)
+
+                    if not turn_task.done():
+                        turn_task.cancel()
+
+                    break
+
+                try:
+                    item = await asyncio.wait_for(q.get(), timeout=keepalive_seconds)
+                except asyncio.TimeoutError:
+                    # Keepalive to reduce risk of proxy/client idle timeouts.
+                    yield _sse_pack({"keepalive": True}, event="keepalive")
+                    continue
+
+                if item is None:
+                    break
+
+                event_name, data = item
+                yield _sse_pack(data, event=event_name)
+
+        except asyncio.CancelledError:
+            # If Starlette cancels the generator itself, also cancel the running turn.
+            logger.info("SSE generator cancelled; cancelling turn (session_id=%s).", payload.session_id)
+
+            with contextlib.suppress(Exception):
+                from backend import runtime as runtime_mod
+
+                logger.info("Calling runtime.cancel_active_turn session_id=%s", payload.session_id)
+                await runtime_mod.cancel_active_turn(payload.session_id)
+                logger.info("runtime.cancel_active_turn returned session_id=%s", payload.session_id)
+
+            if not turn_task.done():
+                turn_task.cancel()
+            raise
+
+        finally:
+            if not turn_task.done():
+                turn_task.cancel()
+                with contextlib.suppress(Exception):
+                    await turn_task
+
+    return StreamingResponse(
+        _event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
