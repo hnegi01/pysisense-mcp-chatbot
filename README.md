@@ -13,7 +13,21 @@ Under the hood there are three logical services:
 - A **backend API + agent layer** (`backend/api_server.py` + `backend/agent/*`)
 - An **MCP Streamable HTTP server** wrapping PySisense (`mcp_server/server.py`)
 
-The UI talks to the backend via HTTP, the backend talks to the MCP server via HTTP (JSON-RPC over Streamable HTTP), and the MCP server talks to Sisense via PySisense.
+The UI talks to the backend via HTTP. The backend talks to the MCP server via HTTP (JSON-RPC over Streamable HTTP). The MCP server talks to Sisense via PySisense.
+
+## V2: Streaming progress with SSE
+
+This repo supports end-to-end progress streaming using **Server-Sent Events (SSE)**:
+
+- **UI → Backend:** the UI calls `POST /agent/turn` with `Accept: text/event-stream` and renders live progress updates while the agent runs. At the end, the backend emits a final SSE `result` event with the assistant reply + tool_result.
+- **Backend → MCP:** the backend MCP client always streams `POST /mcp/` so it can consume either:
+  - regular JSON responses (`application/json`) for non-streaming calls, or
+  - SSE responses (`text/event-stream`) for streaming tool calls (progress notifications + final JSON-RPC response).
+- **MCP progress forwarding:** JSON-RPC notifications emitted by the MCP server are forwarded into the backend runtime progress channel and bridged to the UI SSE stream.
+
+This means long migrations can show meaningful “in-progress” updates in the Streamlit UI (not only in logs).
+
+---
 
 ## Quick links
 
@@ -24,8 +38,17 @@ The UI talks to the backend via HTTP, the backend talks to the MCP server via HT
 - [`Dockerfile.ui`](./Dockerfile.ui)
 - [`.env.example`](./.env.example)
 - [`config_prod.sh`](./config_prod.sh)
+
+- [`frontend/app.py`](./frontend/app.py)
+- [`backend/api_server.py`](./backend/api_server.py)
+- [`backend/runtime.py`](./backend/runtime.py)
+- [`backend/agent/llm_agent.py`](./backend/agent/llm_agent.py)
+- [`backend/agent/mcp_client.py`](./backend/agent/mcp_client.py)
+
 - [`mcp_server/server.py`](./mcp_server/server.py)
 - [`mcp_server/tools_core.py`](./mcp_server/tools_core.py)
+
+- [`Execution_Flow.md`](./Execution_Flow.md)
 - [`refresh_registry.sh`](./refresh_registry.sh)
 
 ---
@@ -37,6 +60,11 @@ The UI talks to the backend via HTTP, the backend talks to the MCP server via HT
     - Connect to a single Sisense deployment and talk to an agent that can inspect and operate on that environment.
   - **Migrate between deployments**
     - Connect **source** and **target** Sisense environments and use migration tools to move assets.
+
+- **SSE progress streaming (V2)**
+  - The UI streams agent turns and shows live progress updates.
+  - Progress is captured into a per-run “run log” and rendered under assistant responses.
+  - Works especially well for long migrations and bulk operations.
 
 - **MCP-powered tools over PySisense**
   - PySisense SDK methods are wrapped as MCP tools and registered via a **tool registry JSON**.
@@ -66,11 +94,15 @@ High-level flow:
 2. The UI calls the **backend API** (`backend/api_server.py`) over HTTP (for example `/health`, `/tools`, `/agent/turn`).
 3. The backend:
    - Manages **per-session MCP clients** and state in `backend/runtime.py`.
-   - Uses `backend/agent/llm_agent.py` for planning, tool selection, and summarization.
-   - Uses `backend/agent/mcp_client.py` to call the MCP server.
+   - Uses `backend/agent/llm_agent.py` for planning, tool selection, mutation approvals, and summarization.
+   - Uses `backend/agent/mcp_client.py` to call the MCP server (JSON-RPC over Streamable HTTP).
+   - Streams progress to the UI over SSE when the UI requests it.
 4. The **MCP Streamable HTTP server** (`mcp_server/server.py`):
    - Exposes `/health`.
    - Exposes an MCP endpoint `/mcp/` implementing MCP **Streamable HTTP** (JSON-RPC).
+   - For streaming-capable tool calls, responds with **SSE** containing:
+     - JSON-RPC notifications (progress), then
+     - a final JSON-RPC response message with the matching request id.
    - Uses `mcp_server/tools_core.py` to map tool IDs to PySisense SDK calls.
    - Reads the tool registry JSON from `config/`.
 5. PySisense uses Sisense REST APIs to talk to your Sisense deployments.
@@ -79,6 +111,8 @@ High-level flow:
 
 ![FES Assistant architecture](images/FES_ASSISTANT_AD.png)
 
+For the full end-to-end execution flow (including SSE streaming, progress propagation, and the mutation approval loop), see [`Execution_Flow.md`](./Execution_Flow.md).
+
 ### Folder structure
 
 ```text
@@ -86,28 +120,29 @@ Root/
   backend/
     agent/
       __init__.py
-      llm_agent.py        # LLM orchestration + tool calling
-      mcp_client.py       # Async HTTP client for MCP server
+      llm_agent.py        # LLM orchestration: planning, tool selection, approvals, optional summarization
+      mcp_client.py       # MCP Streamable HTTP client (JSON-RPC over POST /mcp/, supports SSE tool progress)
     __init__.py
-    runtime.py            # Session pool, long-lived McpClient per UI session
-    api_server.py         # FastAPI backend for the Streamlit UI
+    runtime.py            # Session pool, long-lived McpClient per UI session, progress bridging
+    api_server.py         # FastAPI backend (JSON + SSE on /agent/turn; exposes /health and /tools)
 
   config/
     tools.registry.json                 # Base tool registry generated from the SDK
     tools.registry.with_examples.json   # Registry enriched with LLM examples
 
   frontend/
-    app.py               # Streamlit UI
+    app.py               # Streamlit UI (SSE client for backend /agent/turn)
 
   images/
+    FES_ASSISTANT_AD.png
     ui1.png
     ui2.png
 
   logs/                  # Runtime logs (rotated; not committed)
 
   mcp_server/
-    server.py            # Starlette MCP Streamable HTTP server (/mcp/ JSON-RPC, /health)
-    tools_core.py        # Glue between MCP tools and PySisense
+    server.py            # MCP Streamable HTTP server (/mcp/ JSON-RPC, /health; SSE for streaming tools/call)
+    tools_core.py        # Registry loading, SDK client construction, tool dispatch, emit/progress integration
 
   scripts/
     __init__.py
@@ -120,16 +155,17 @@ Root/
   .dockerignore
   LICENSE
   README.md
+  Execution_Flow.md
   refresh_registry.sh
   requirements.txt
 
   # Docker-related files
-  Dockerfile.backend     # Image for backend FastAPI service
-  Dockerfile.ui          # Image for Streamlit UI
-  Dockerfile.mcp         # Image for MCP Streamable HTTP server
-  docker-compose.yml     # Local/dev docker-compose (uses .env)
-  docker-compose.prod.yml# Example production compose (uses real env vars)
-  config_prod.sh         # Example script to export prod env vars (no secrets)
+  Dockerfile.backend        # Image for backend FastAPI service
+  Dockerfile.ui             # Image for Streamlit UI
+  Dockerfile.mcp            # Image for MCP Streamable HTTP server
+  docker-compose.yml        # Local/dev docker-compose (uses .env)
+  docker-compose.prod.yml   # Example production compose (uses real env vars)
+  config_prod.sh            # Example script to export prod env vars (no secrets)
 ```
 
 ---
@@ -205,7 +241,7 @@ Optional LLM retry tuning:
 - `LLM_HTTP_MAX_RETRIES`
 - `LLM_HTTP_RETRY_BASE_DELAY`
 
-### 3) Backend → MCP client configuration
+### 3) Backend → MCP client configuration (SSE-aware)
 
 Read by `backend/agent/mcp_client.py`:
 
@@ -213,10 +249,21 @@ Read by `backend/agent/mcp_client.py`:
   Base URL for the MCP Streamable HTTP server. The client calls `/mcp/` under this base URL.
 
 - `PYSISENSE_MCP_HTTP_TIMEOUT`  
-  Timeout (seconds) for MCP calls. For migrations, keep this high.
+  Default timeout (seconds) for MCP calls.  
+  Note: streaming tool calls remove the read timeout (unbounded) so long-running migrations can stream progress.
 
 - `MCP_HTTP_MAX_RETRIES` and `MCP_HTTP_RETRY_BASE_DELAY`  
   Retry tuning for MCP calls. Recommended to keep retries low for long-running / non-idempotent tools.
+
+Optional SSE behavior:
+
+- `MCP_AUTO_SUBSCRIBE`  
+  If `true`, the MCP client starts an optional long-lived `GET /mcp/` SSE subscription on connect.  
+  This is useful for servers that emit progress on the GET stream instead of (or in addition to) the POST response.
+
+- `MCP_STREAMING_TOOL_IDS`  
+  Comma-separated list of tool ids treated as “streaming-sensitive” (long-running).  
+  For these tools, the client removes read timeouts and expects SSE responses.
 
 ### 4) MCP tool server / PySisense configuration
 
@@ -321,7 +368,7 @@ uvicorn mcp_server.server:app --host 0.0.0.0 --port 8002 --workers 1
 
 Why `--workers 1`:
 - MCP Streamable HTTP sessions are stateful, and running multiple workers can break session continuity unless you add sticky routing.
-- This project relies on a single worker and uses concurrency caps + thread offload to stay responsive during long migrations.
+- This project relies on a single worker and uses concurrency caps + streaming progress to stay responsive during long migrations.
 
 5) Start the backend API
 
@@ -393,9 +440,11 @@ PYSISENSE_DEFAULT_TOKEN="your-api-token"
 PYSISENSE_DEFAULT_SSL=false
 ```
 
-Important: You do not need to tell Claude first time to “send empty strings for Sisense connection fields like domain and token" along with your regular action prompt. If default-tenant fallback is enabled on the MCP server, Claude can call tools without providing those fields, and the server will fill them in from its environment configuration.
+Important: You do not need to tell Claude to pass empty domain/token fields. If default-tenant fallback is enabled on the MCP server, the server can fill them in from its environment.
 
-Note: This is a convenience for local/internal use. A future version may replace this with a more explicit, user-scoped auth/connection flow (so you do not rely on server-side default credentials).
+Note on SSE in Claude Desktop:
+- The MCP server supports SSE progress streaming.
+- Some MCP clients may not yet render progress events in the main UI (they may only appear in logs). This does not affect the Streamlit UI path, which fully supports SSE progress end-to-end.
 
 ---
 
@@ -455,6 +504,10 @@ For production you typically:
 An example non-secret env script is included: [`config_prod.sh`](./config_prod.sh).
 
 Secrets like `AZURE_OPENAI_API_KEY` or `DATABRICKS_TOKEN` should be provided via a secure channel (SSM Parameter Store, Secrets Manager, etc.).
+
+SSE notes for production reverse proxies:
+- Ensure your proxy/load balancers support SSE and do not buffer responses.
+- Common requirements include disabling proxy buffering and increasing idle timeouts for long-lived responses.
 
 ---
 
