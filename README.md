@@ -1,3 +1,8 @@
+> Branch note (v1-old)
+>
+> This branch contains the original V1 implementation (pre-SSE). Tool execution is non-streaming, so migration runs do not stream live progress updates to the UI.  
+> For the current implementation with SSE-based streaming progress, use the `main` branch.
+> 
 # FES Assistant (PySisense MCP Assistant)
 
 Agentic Streamlit application and MCP (Model Context Protocol) **Streamable HTTP** tool server built on top of the [PySisense](https://github.com/sisense/pysisense) SDK.
