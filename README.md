@@ -109,7 +109,7 @@ High-level flow:
 
 ### Architecture diagram
 
-![FES Assistant architecture](images/FES_ASSISTANT_AD.png)
+![FES Assistant architecture](images/FES_ASSISTANT_AD.jpeg)
 
 For the full end-to-end execution flow (including SSE streaming, progress propagation, and the mutation approval loop), see [`Execution_Flow.md`](./Execution_Flow.md).
 
