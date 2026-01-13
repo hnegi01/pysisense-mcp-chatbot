@@ -564,6 +564,11 @@ This codebase is designed as an internal tool and is not production-hardened by 
 - Consider network-level restrictions so only trusted hosts can reach the backend and MCP server.
 
 ---
+## DEMO
+
+https://github.com/user-attachments/assets/1ef44ff2-21c4-4be9-8a3f-8761f0641d6e
+
+---
 
 ## Related project
 
