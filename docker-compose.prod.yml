@@ -1,17 +1,45 @@
 version: "3.9"
 
 services:
+  nginx:
+    image: nginx:alpine
+    container_name: fes-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - fes-ui
+      - fes-backend
+      - fes-mcp
+    restart: unless-stopped
+
   fes-mcp:
-    image: your-dockerhub/fes-mcp:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    image: fes-mcp:prod
     container_name: fes-mcp
+    restart: unless-stopped
+    env_file:
+      - .env
     ports:
       - "8002:8002"
     volumes:
       - ./logs:/app/logs
+    command: ["uvicorn", "mcp_server.server:app", "--host", "0.0.0.0", "--port", "8002", "--workers", "1"]
 
   fes-backend:
-    image: your-dockerhub/fes-backend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: fes-backend:prod
     container_name: fes-backend
+    restart: unless-stopped
+    env_file:
+      - .env
     environment:
       PYSISENSE_MCP_HTTP_URL: http://fes-mcp:8002
     ports:
@@ -22,8 +50,14 @@ services:
       - fes-mcp
 
   fes-ui:
-    image: your-dockerhub/fes-ui:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.ui
+    image: fes-ui:prod
     container_name: fes-ui
+    restart: unless-stopped
+    env_file:
+      - .env
     environment:
       FES_BACKEND_URL: http://fes-backend:8001
     ports:
