@@ -1,31 +1,44 @@
-# FES Assistant (PySisense MCP Assistant)
+# 🤖 FES Assistant: Your Agentic Sisense Co-pilot
 
-Agentic Streamlit application and MCP (Model Context Protocol) **Streamable HTTP** tool server built on top of the [PySisense](https://github.com/sisense/pysisense) SDK.
+### **🧪 Experimental Community Extension by Sisense Field Engineering**
 
-FES Assistant lets Sisense Field Engineering (and power users) do two things:
+> **Note:** This project is an experimental, field-developed tool built on the [PySisense SDK](https://github.com/sisense/pysisense). It is designed for **Natural Language Ops (NLOps)** and platform orchestration, not as an official product feature.
 
-1. **Chat with a single Sisense deployment** – ask questions, inspect assets, and perform safe actions via PySisense tools.
-2. **Migrate between deployments** – connect a source and target Sisense environment and use migration-focused tools to move assets.
+FES Assistant is an **Agentic Orchestration Suite** built on top of the Model Context Protocol (MCP). It is designed specifically for **managing your Sisense environment**, allowing Sisense Users to move beyond manual API scripting and orchestration through an autonomous AI sidekick.
 
-Under the hood there are three logical services:
+---
 
-- A **Streamlit UI** (`frontend/app.py`)
-- A **backend API + agent layer** (`backend/api_server.py` + `backend/agent/*`)
-- An **MCP Streamable HTTP server** wrapping PySisense (`mcp_server/server.py`)
+## 🚀 Why every Sisense user needs a Co-pilot:
 
-The UI talks to the backend via HTTP. The backend talks to the MCP server via HTTP (JSON-RPC over Streamable HTTP). The MCP server talks to Sisense via PySisense.
+* **📈 For Dashboard Designers:** Instantly find dashboards, audit your own widgets, and get environment well-checks without digging through menus.
+* **🏗️ For Data Designers:** A specialized co-pilot for model optimization—find unused fields, audit M2M relationships, and build data models via natural language chat.
+* **🛡️ For Admins:** An automation engine for environment/tenant migrations, bulk governance, and platform-wide orchestration-as-code.
 
-## V2: Streaming progress with SSE
+---
 
-This repo supports end-to-end progress streaming using **Server-Sent Events (SSE)**:
+![FES Assistant architecture](images/FES_ASSISTANT_AD.jpeg)
 
-- **UI → Backend:** the UI calls `POST /agent/turn` with `Accept: text/event-stream` and renders live progress updates while the agent runs. At the end, the backend emits a final SSE `result` event with the assistant reply + tool_result.
-- **Backend → MCP:** the backend MCP client always streams `POST /mcp/` so it can consume either:
-  - regular JSON responses (`application/json`) for non-streaming calls, or
-  - SSE responses (`text/event-stream`) for streaming tool calls (progress notifications + final JSON-RPC response).
-- **MCP progress forwarding:** JSON-RPC notifications emitted by the MCP server are forwarded into the backend runtime progress channel and bridged to the UI SSE stream.
+*For the full end-to-end execution flow (including SSE streaming, progress propagation, and the mutation approval loop), see [`Execution_Flow.md`](./Execution_Flow.md).*
 
-This means long migrations can show meaningful “in-progress” updates in the Streamlit UI (not only in logs).
+---
+
+## Key Agentic Capabilities
+
+* **Autonomous Infrastructure Audits:** Ask the agent to find Many-to-Many relationships, unused datamodel fields, or orphaned assets across your entire environment.
+* **Zero-Touch Migrations:** Execute complex cross-tenant moves for dashboards and datamodels with built-in safety loops and confirmation steps.
+* **Protocol-First Integration:** Operates as a **Streamable HTTP MCP Server**, allowing you to use this UI or plug Sisense "tools" directly into external agents like Claude Desktop.
+* **Real-Time Progress Visibility:** Built with **Server-Sent Events (SSE)** to provide live streaming updates (V2) for long-running migrations and bulk tasks.
+* **Privacy-First Logic:** Includes a manual **Summarization Toggle** to ensure raw data responses stay within your infrastructure when required.
+
+---
+
+## 🏗️ Architecture & Flow
+
+The FES Assistant is built as a modular stack to ensure you can use the MCP server independently if desired:
+
+- **The Orchestrator:** A **Streamlit UI** (`frontend/app.py`) for mission control.
+- **The Brain:** A **Backend API + Agent Layer** (`backend/api_server.py`) that handles planning, tool selection, and confirmation loops.
+- **The Bridge:** An **MCP Streamable HTTP Server** (`mcp_server/server.py`) that translates AI intent into [PySisense](https://github.com/sisense/pysisense) SDK actions.
 
 ---
 
@@ -106,12 +119,6 @@ High-level flow:
    - Uses `mcp_server/tools_core.py` to map tool IDs to PySisense SDK calls.
    - Reads the tool registry JSON from `config/`.
 5. PySisense uses Sisense REST APIs to talk to your Sisense deployments.
-
-### Architecture diagram
-
-![FES Assistant architecture](images/FES_ASSISTANT_AD.jpeg)
-
-For the full end-to-end execution flow (including SSE streaming, progress propagation, and the mutation approval loop), see [`Execution_Flow.md`](./Execution_Flow.md).
 
 ### Folder structure
 
@@ -555,13 +562,31 @@ Screenshots:
 
 ---
 
-## Security and deployment notes
+## 🔒 Security & Deployment Best Practices
 
-This codebase is designed as an internal tool and is not production-hardened by default.
+While this is an experimental tool, we recommend the following "Security First" approach for your deployment:
 
-- Put the UI + backend behind your organization’s authentication/SSO.
-- Lock access to Sisense tokens and LLM API keys.
-- Consider network-level restrictions so only trusted hosts can reach the backend and MCP server.
+* **Authentication:** Deploy the UI and Backend behind your organization’s SSO, a VPN, or a Secure Reverse Proxy (e.g., Nginx with Auth).
+* **Credential Management:** Use a dedicated, limited-privilege Sisense Service Account and ensure your LLM API keys are stored securely (e.g., via environment secrets, not hard-coded).
+* **Network Isolation:** Implement network-level restrictions (firewalls/VPC rules) so only trusted internal hosts can reach the Backend and MCP server endpoints.
+* **Service Scoping:** If using Claude Desktop via mcp-remote, ensure you utilize a secure tunneling method (e.g., SSH Tunnel, Tailscale) if the server is not on your local machine.
+
+---
+
+## ⚖️ Community Disclaimer & Liability Shield
+
+**Important: Field-Developed Ecosystem Extension**
+
+These tools are community-contributed projects developed by Sisense Field Engineering. They are **not** official Sisense product features and do not fall under standard Sisense SLAs, Support, or Security Certifications.
+
+* **Local Library Execution (PySisense SDK):** As a Python package installed via PyPI, all logic executes locally on your workstation or server. No data is ever transmitted to Sisense Field Engineering.
+* **Self-Hosted Applications (MCP Server & FES Assistant):** These are designed to be deployed within your own private network or VPC. You maintain full ownership of the hosting environment, logs, and security configurations.
+* **LLM Data Exposure & Summarization:**
+    * **FES Assistant:** Features a manual **Summarization Toggle**. By default, the LLM only sees your prompt and tool definitions to determine intent. Optionally, when enabled, the raw response from the SDK (which may contain metadata or specific tool-level data) is sent to the LLM to generate a natural language summary.
+    * **MCP Server:** When used with third-party clients (e.g., Claude Desktop, IDE Agents), all data retrieved via the SDK is passed directly to the host client's LLM to generate a response.
+* **Responsibility:** By using these tools, the customer/user acknowledges that Sisense metadata and API responses will be processed by their chosen LLM provider. Customers are **solely responsible** for ensuring their LLM provider (OpenAI, Anthropic, Databricks Foundation Models API, etc.) meets their organization’s data privacy and security standards.
+* **Liability & Risk:** These tools are provided **"as-is"** for experimental purposes. Sisense and its employees are not liable for security vulnerabilities, third-party LLM data exposure, or environment disruptions.
+* **Non-Production Recommendation:** We strongly recommend testing these tools in a sandbox environment and using them with a dedicated, limited-privilege Sisense Service Account.
 
 ---
 ## DEMO
