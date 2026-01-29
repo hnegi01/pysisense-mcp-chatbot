@@ -1,10 +1,39 @@
 # 🤖 FES Assistant: Your Agentic Sisense Co-pilot
 
-### **🧪 Experimental Community Extension by Sisense Field Engineering**
+## ⚠️ Experimental Project Notice
 
-> **Note:** This project is an experimental, field-developed tool built on the [PySisense SDK](https://github.com/sisense/pysisense). It is designed for **Natural Language Ops (NLOps)** and platform orchestration, not as an official product feature.
+### Community-Contributed Tool from Sisense Field Engineering
 
-FES Assistant is an **Agentic Orchestration Suite** built on top of the Model Context Protocol (MCP). It is designed specifically for **managing your Sisense environment**, allowing Sisense Users to move beyond manual API scripting and orchestration through an autonomous AI sidekick.
+This project is an experimental tool developed by Sisense Field Engineering to facilitate customer learning and exploration of Sisense capabilities. While maintained by Field Engineering, it is shared "as-is" to encourage feedback and experimentation.
+
+Important Disclaimer: This tool is not part of the core Sisense product release lifecycle and does not undergo the same validation, support, or certification processes as generally available (GA) Sisense features. It is intended to complement, not replace, officially supported Sisense features.
+
+---
+
+## Technical & Security Considerations
+
+### Deployment & Execution Control
+- Local SDK Usage (PySisense): All processing logic runs locally on your machine or server. No data is transmitted to Sisense Field Engineering.
+- Self-hosted Components (FES Assistant / MCP Server): These components are designed for deployment within your own environment (on-prem or VPC). You maintain complete control over infrastructure, security configuration, access controls, and logs.
+
+### Data & LLM Handling
+- LLM Feature Status: The FES Assistant summarization feature is disabled by default.
+- Data Transmission: When the summarization feature is enabled, responses retrieved via the Sisense SDK may be sent to your chosen Large Language Model (LLM) provider for processing.
+- Third-Party Clients: When using the MCP Server with third-party clients (e.g., IDE agents or desktop assistants like Claude Desktop), data retrieved from Sisense is passed directly to the client’s LLM.
+- Customer Responsibility: Customers are responsible for selecting an LLM provider that meets their organization’s data privacy and security requirements.
+
+---
+
+## Recommended Usage Guidelines
+- Environment: Use the tool primarily in sandbox or non-production environments.
+- Access: Utilize a dedicated Sisense service account with limited privileges.
+- Validation: Thoroughly review and validate the tool's behavior before any broader adoption within your organization.
+
+---
+
+## About FES Assistant
+
+FES Assistant is an MCP-powered, agentic toolkit for Sisense environment operations. It helps you automate governance checks, migrations, and day-to-day admin workflows using natural language, so you can orchestrate tasks without writing one-off API scripts.
 
 ---
 
@@ -39,6 +68,8 @@ The FES Assistant is built as a modular stack to ensure you can use the MCP serv
 - **The Orchestrator:** A **Streamlit UI** (`frontend/app.py`) for mission control.
 - **The Brain:** A **Backend API + Agent Layer** (`backend/api_server.py`) that handles planning, tool selection, and confirmation loops.
 - **The Bridge:** An **MCP Streamable HTTP Server** (`mcp_server/server.py`) that translates AI intent into [PySisense](https://github.com/sisense/pysisense) SDK actions.
+
+MCP Server docs: [Meta-Management MCP Server](mcp_server/README.md)
 
 ---
 
