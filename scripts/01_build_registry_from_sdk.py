@@ -523,8 +523,6 @@ SCHEMA_RULES: Dict[str, Dict[str, Any]] = {
                 "extract": ["ec", "elasticube", "elastic cube", "cube", "elastic-cube"],
                 "live": ["realtime", "real-time", "live model"],
             },
-            "parameters.properties.row_limit.type": "integer",
-            "parameters.properties.row_limit.minimum": 1,
 
             # Override the auto-generated `tables` schema with a rich object definition
             "parameters.properties.tables": {
@@ -559,8 +557,8 @@ SCHEMA_RULES: Dict[str, Dict[str, Any]] = {
                         "import_query": {
                             "type": "string",
                             "description": (
-                                "Optional custom SQL to import rows (e.g., SELECT ... LIMIT 10). "
-                                "If provided, supersedes physical table fetch."
+                                "Optional custom SQL (executed as-is). Use fully-qualified tables: schema.table "
+                                "(Databricks: `schema`.`table`)."
                             ),
                         },
                         "description": {
@@ -575,7 +573,7 @@ SCHEMA_RULES: Dict[str, Dict[str, Any]] = {
                         "build_behavior_config": {
                             "type": "object",
                             "description": (
-                                "Only used for 'extract' models. Ignored for 'live'. "
+                                "Extract models only; omit for 'live'. "
                                 "For 'increment' mode, column_name is required."
                             ),
                             "properties": {

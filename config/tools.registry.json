@@ -606,7 +606,7 @@
     "class": "DataModel",
     "method": "create_table",
     "description": "Create a new table in the specified DataModel.",
-    "full_doc": "Create a new table in the specified DataModel.\n\nParameters:\n    datamodel_name (str): Name of the DataModel where the table will be created.\n    table_name (str): Name of the table to create.\n    database_name (str, optional): Name of the data source database.\n        If not provided, will try to infer from the DataModel.\n    schema_name (str, optional): Name of the data source schema.\n        If not provided, will try to infer from the DataModel.\n    dataset_id (str, optional): ID of the dataset where the table will be created.\n        If not provided, will try to infer from the DataModel.\n    import_query (str, optional): SQL statement used as custom import query. Defaults to None.\n    description (str, optional): Description for the table. Defaults to an empty string.\n    tags (list, optional): List of tags to apply to the table. Defaults to None.\n    build_behavior_config (dict, optional): Configuration for table build behavior.\n\nReturns:\n    dict: Table object if created successfully or an error message.",
+    "full_doc": "Create a new table in the specified DataModel.\n\nParameters:\n    datamodel_name (str): Name of the DataModel where the table will be created.\n    table_name (str): Name of the table to create.\n    database_name (str, optional): Name of the data source database.\n        If not provided, will try to infer from the DataModel.\n    schema_name (str, optional): Name of the data source schema.\n        If not provided, will try to infer from the DataModel.\n    dataset_id (str, optional): ID of the dataset where the table will be created.\n        If not provided, will try to infer from the DataModel.\n    import_query (str, optional): Optional custom SQL (executed as-is). Use fully-qualified tables: schema.table (Databricks example: sales.orders).\n    description (str, optional): Description for the table. Defaults to an empty string.\n    tags (list, optional): List of tags to apply to the table. Defaults to None.\n    build_behavior_config (dict, optional): Configuration for table build behavior.\n\nReturns:\n    dict: Table object if created successfully or an error message.",
     "parameters": {
       "type": "object",
       "properties": {
@@ -632,7 +632,7 @@
         },
         "import_query": {
           "type": "string",
-          "description": "SQL statement used as custom import query. Defaults to None."
+          "description": "Optional custom SQL (executed as-is). Use fully-qualified tables: schema.table (Databricks example: sales.orders)."
         },
         "description": {
           "type": "string",
@@ -1192,7 +1192,7 @@
         },
         "tables": {
           "type": "array",
-          "description": "List of tables to add. For 'live' models, build_behavior_config is ignored. For 'extract' models, set build_behavior_config as needed.",
+          "description": "List of tables to add. For 'live' models, omit build_behavior_config. For 'extract' models, use build_behavior_config as needed.",
           "items": {
             "type": "object",
             "properties": {
@@ -1210,7 +1210,7 @@
               },
               "import_query": {
                 "type": "string",
-                "description": "Optional custom SQL to import rows (e.g., SELECT ... LIMIT 10). If provided, supersedes physical table fetch."
+                "description": "Optional custom SQL (executed as-is). Use fully-qualified tables: schema.table (Databricks: `schema`.`table`)."
               },
               "description": {
                 "type": "string",
@@ -1225,7 +1225,7 @@
               },
               "build_behavior_config": {
                 "type": "object",
-                "description": "Only used for 'extract' models. Ignored for 'live'. For 'increment' mode, column_name is required.",
+                "description": "Extract models only; omit for 'live'. For 'increment' mode, column_name is required.",
                 "properties": {
                   "mode": {
                     "type": "string",
@@ -1253,10 +1253,6 @@
         "dataset_name": {
           "type": "string",
           "description": "Name of the dataset. Defaults to schema name if not provided."
-        },
-        "row_limit": {
-          "type": "integer",
-          "minimum": 1
         }
       },
       "required": [

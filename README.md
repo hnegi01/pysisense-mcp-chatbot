@@ -210,7 +210,7 @@ Root/
 
 ## Prerequisites
 
-- Python 3.10+
+- Python 3.11+
 - A Sisense Fusion deployment (or multiple, for migration use cases)
 - Access to at least one LLM provider:
   - Azure OpenAI, or
@@ -383,7 +383,7 @@ This is a simple three-process dev setup.
 1) Create and activate a virtual environment
 
 ```bash
-python -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate     # Windows: .venv\Scripts\activate
 ```
 
@@ -441,6 +441,13 @@ Make sure the MCP server is running:
 ```bash
 uvicorn mcp_server.server:app --host 0.0.0.0 --port 8002 --workers 1
 ```
+
+To sanity-check the MCP server before wiring Claude Desktop, run:
+```bash
+npx -y @modelcontextprotocol/inspector
+```
+
+This launches the Inspector and opens a browser UI. The Inspector generates a local session URL
 
 ### 2) Configure Claude Desktop
 

@@ -550,9 +550,17 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("FES Assistant")
 st.markdown(
-    "<p style='font-size: 0.95rem; opacity: 0.85;'>Powered by the FES Agent (MCP + PySisense)</p>",
+    """
+    <div style="font-size: 2.5rem; font-weight: 700; line-height: 1.15; margin: 0 0 0.25rem 0;">
+        FES Assistant: Agentic Sisense Co-Pilot
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.markdown(
+    "<p style='font-size: 0.95rem; opacity: 0.85; margin-top: 0;'>Powered by the FES Agent (MCP + PySisense)</p>",
     unsafe_allow_html=True,
 )
 
