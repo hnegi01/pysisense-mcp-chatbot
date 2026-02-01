@@ -1160,7 +1160,7 @@
         },
         "import_query": {
           "type": "string",
-          "description": "SQL statement used as custom import query. Defaults to None."
+          "description": "Optional custom SQL (executed as-is). Use fully-qualified tables: schema.table (Databricks example: sales.orders)."
         },
         "description": {
           "type": "string",
@@ -1215,7 +1215,7 @@
         "arguments": {
           "datamodel_name": "CustomerInsights",
           "table_name": "customer_profiles",
-          "import_query": "SELECT * FROM customers WHERE active = true",
+          "import_query": "SELECT * FROM schema.customers WHERE active = true",
           "description": "Active customer profiles for segmentation.",
           "tags": [
             "customers",
@@ -2122,7 +2122,7 @@
         },
         "tables": {
           "type": "array",
-          "description": "List of tables to add. For 'live' models, build_behavior_config is ignored. For 'extract' models, set build_behavior_config as needed.",
+          "description": "List of tables to add. For 'live' models, omit build_behavior_config. For 'extract' models, use build_behavior_config as needed.",
           "items": {
             "type": "object",
             "properties": {
@@ -2140,7 +2140,7 @@
               },
               "import_query": {
                 "type": "string",
-                "description": "Optional custom SQL to import rows (e.g., SELECT ... LIMIT 10). If provided, supersedes physical table fetch."
+                "description": "Optional custom SQL (executed as-is). Use fully-qualified tables: schema.table (Databricks: `schema`.`table`)."
               },
               "description": {
                 "type": "string",
@@ -2155,7 +2155,7 @@
               },
               "build_behavior_config": {
                 "type": "object",
-                "description": "Only used for 'extract' models. Ignored for 'live'. For 'increment' mode, column_name is required.",
+                "description": "Extract models only; omit for 'live'. For 'increment' mode, column_name is required.",
                 "properties": {
                   "mode": {
                     "type": "string",
@@ -2183,10 +2183,6 @@
         "dataset_name": {
           "type": "string",
           "description": "Name of the dataset. Defaults to schema name if not provided."
-        },
-        "row_limit": {
-          "type": "integer",
-          "minimum": 1
         }
       },
       "required": [
@@ -2254,7 +2250,7 @@
           "tables": [
             {
               "table_name": "campaign_performance",
-              "import_query": "SELECT campaign_id, impressions, clicks FROM campaigns WHERE active = TRUE",
+              "import_query": "SELECT campaign_id, impressions, clicks FROM analytics.campaigns WHERE active = TRUE",
               "description": "Live data for active marketing campaigns.",
               "tags": [
                 "marketing",
@@ -2263,10 +2259,10 @@
             }
           ]
         },
-        "notes": "This call creates a 'live' DataModel for marketing data, using a custom SQL query to fetch active campaign performance."
+        "notes": "This call creates a 'live' DataModel for marketing data using a custom SQL query. For live models, omit build_behavior_config."
       },
       {
-        "user_query": "Create a new DataModel for an Elasticube with three tables and append new rows to one of them.",
+        "user_query": "Create a new DataModel for an Elasticube with three tables, using different build behaviors.",
         "arguments": {
           "datamodel_name": "Finance_Elasticube",
           "datamodel_type": "extract",
@@ -2308,10 +2304,9 @@
               }
             }
           ],
-          "dataset_name": "FinanceDataset",
-          "row_limit": 100000
+          "dataset_name": "FinanceDataset"
         },
-        "notes": "This call sets up an 'extract' DataModel for finance data, with different build behaviors for each table and a row limit applied."
+        "notes": "This call sets up an 'extract' DataModel for finance data with different build behaviors for each table."
       }
     ]
   },

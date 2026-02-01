@@ -198,8 +198,13 @@ def _jsonrpc_error(rid: Any, code: int, message: str) -> Dict[str, Any]:
 def _tool_to_wire(t: types.Tool) -> Dict[str, Any]:
     """
     Convert MCP Tool object into a dict with only the fields clients expect.
+    Ensure enums/optionals serialize cleanly for strict clients (Inspector).
     """
-    d = t.model_dump() if hasattr(t, "model_dump") else t.dict()
+    if hasattr(t, "model_dump"):
+        d = t.model_dump(mode="json", exclude_none=True)
+    else:
+        d = t.dict(exclude_none=True)
+
     return {
         "name": d.get("name"),
         "description": d.get("description") or "",
@@ -208,10 +213,14 @@ def _tool_to_wire(t: types.Tool) -> Dict[str, Any]:
 
 
 def _result_to_dict(r: Any) -> Dict[str, Any]:
+    """
+    Serialize pydantic models without null optionals (e.g., annotations=null),
+    which breaks strict MCP clients like the Inspector.
+    """
     if hasattr(r, "model_dump"):
-        return r.model_dump()
+        return r.model_dump(mode="json", exclude_none=True)
     if hasattr(r, "dict"):
-        return r.dict()
+        return r.dict(exclude_none=True)
     return dict(r)
 
 
