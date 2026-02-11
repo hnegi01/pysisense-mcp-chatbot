@@ -46,6 +46,7 @@ services:
       - .env
     environment:
       FES_BACKEND_URL: http://fes-backend:8001
+      FES_MCP_URL: http://fes-mcp:8002
     ports:
       - "8501:8501"
     volumes:

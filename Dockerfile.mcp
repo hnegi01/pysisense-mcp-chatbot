@@ -10,9 +10,10 @@ ENV PYTHONUNBUFFERED=1 \
 # 3) Workdir inside container
 WORKDIR /app
 
-# 4) OS-level deps
+# 4) OS-level deps (compiler tools for wheels + curl for debugging/health checks)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    curl \
  && rm -rf /var/lib/apt/lists/*
 
 # 5) Install Python dependencies
@@ -24,7 +25,12 @@ COPY mcp_server ./mcp_server
 COPY config ./config
 
 # 7) Expose MCP HTTP port
+# Note: EXPOSE is metadata only. The MCP server is NOT publicly accessible unless you publish it via docker-compose ports.
 EXPOSE 8002
 
-# 8) Run the MCP Streamable HTTP server (Starlette)
+# 8) Run as non-root user (basic hardening)
+RUN useradd -m appuser && chown -R appuser:appuser /app
+USER appuser
+
+# 9) Run the MCP Streamable HTTP server (Starlette)
 CMD ["uvicorn", "mcp_server.server:app", "--host", "0.0.0.0", "--port", "8002"]
