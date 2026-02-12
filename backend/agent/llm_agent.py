@@ -35,6 +35,15 @@ from logging.handlers import RotatingFileHandler
 
 from .mcp_client import McpClient
 
+# Optional: boto3 for AWS Secrets Manager (Azure OpenAI credentials fallback)
+try:
+    import boto3
+    from botocore.exceptions import ClientError
+
+    _BOTO3_AVAILABLE = True
+except ImportError:
+    _BOTO3_AVAILABLE = False
+
 
 # -----------------------------------------------------------------------------
 # Logging
@@ -93,6 +102,91 @@ def _require_env(name: str) -> str:
     if not value:
         raise RuntimeError(f"Missing required env var: {name}")
     return value
+
+
+# -----------------------------------------------------------------------------
+# AWS Secrets Manager fallback (Azure OpenAI only)
+# -----------------------------------------------------------------------------
+AWS_SECRET_ID_ENV_VAR = "FES_AZURE_OPENAI_SECRET_ID"
+AWS_REGION_ENV_VAR = "AWS_REGION"
+
+
+def _get_azure_openai_secrets_from_aws() -> Dict[str, str]:
+    """
+    Fetch Azure OpenAI credentials from AWS Secrets Manager.
+
+    Requires env: FES_AZURE_OPENAI_SECRET_ID (secret name/id), AWS_REGION.
+    Expects the secret to be a JSON string with keys such as:
+    AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, and optionally AZURE_OPENAI_DEPLOYMENT.
+
+    Returns
+    -------
+    dict
+        At least "AZURE_OPENAI_ENDPOINT" and "AZURE_OPENAI_API_KEY";
+        may include "AZURE_OPENAI_DEPLOYMENT".
+
+    Raises
+    ------
+    RuntimeError
+        If boto3 is missing, required env vars are missing, or the secret cannot be read.
+    """
+    if not _BOTO3_AVAILABLE:
+        raise RuntimeError(
+            "AWS Secrets Manager fallback requires boto3. Install with: pip install boto3"
+        )
+
+    secret_id = os.getenv(AWS_SECRET_ID_ENV_VAR)
+    region = os.getenv(AWS_REGION_ENV_VAR)
+
+    if not (secret_id and region):
+        raise RuntimeError(
+            f"To use AWS Secrets Manager for Azure OpenAI credentials, set {AWS_SECRET_ID_ENV_VAR} and {AWS_REGION_ENV_VAR}"
+        )
+
+    try:
+        client = boto3.client("secretsmanager", region_name=region)
+        response = client.get_secret_value(SecretId=secret_id)
+    except ClientError as e:
+        logger.exception("Failed to get secret %s from AWS Secrets Manager: %s", secret_id, e)
+        raise RuntimeError(
+            f"Failed to get Azure OpenAI secret from AWS Secrets Manager: {e}"
+        ) from e
+
+    secret_str = response.get("SecretString")
+    if not secret_str:
+        raise RuntimeError(
+            f"Secret {secret_id} has no SecretString (binary secrets not supported)"
+        )
+
+    try:
+        data = json.loads(secret_str)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(
+            f"Secret {secret_id} is not valid JSON: {e}"
+        ) from e
+
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Secret {secret_id} must be a JSON object")
+
+    endpoint = (data.get("AZURE_OPENAI_ENDPOINT") or "").strip()
+    api_key = (data.get("AZURE_OPENAI_API_KEY") or "").strip()
+
+    if not endpoint or not api_key:
+        raise RuntimeError(
+            f"Secret {secret_id} must contain AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY"
+        )
+
+    logger.info(
+        "Loaded Azure OpenAI credentials from AWS Secrets Manager (secret_id=%s, region=%s)",
+        secret_id,
+        region,
+    )
+
+    return {
+        "AZURE_OPENAI_ENDPOINT": endpoint,
+        "AZURE_OPENAI_API_KEY": api_key,
+        "AZURE_OPENAI_DEPLOYMENT": (data.get("AZURE_OPENAI_DEPLOYMENT") or "").strip(),
+    }
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -176,9 +270,30 @@ def _build_llm_config() -> _LlmConfig:
 
     if LLM_PROVIDER == "azure":
         az_style = os.getenv("AZURE_OPENAI_API_STYLE", "v1").strip().lower()  # v1 | legacy
-        az_endpoint = _require_env("AZURE_OPENAI_ENDPOINT").rstrip("/")
-        az_deployment = _require_env("AZURE_OPENAI_DEPLOYMENT")
-        az_api_key = _require_env("AZURE_OPENAI_API_KEY")
+        az_endpoint = (os.getenv("AZURE_OPENAI_ENDPOINT") or "").strip().rstrip("/")
+        az_deployment = (os.getenv("AZURE_OPENAI_DEPLOYMENT") or "").strip()
+        az_api_key = (os.getenv("AZURE_OPENAI_API_KEY") or "").strip()
+
+        # If endpoint or api_key empty, try AWS Secrets Manager (requires AWS_REGION + FES_AZURE_OPENAI_SECRET_ID)
+        if not az_endpoint or not az_api_key:
+            secrets = _get_azure_openai_secrets_from_aws()
+            if not az_endpoint:
+                az_endpoint = secrets["AZURE_OPENAI_ENDPOINT"].rstrip("/")
+            if not az_api_key:
+                az_api_key = secrets["AZURE_OPENAI_API_KEY"]
+            if not az_deployment and secrets.get("AZURE_OPENAI_DEPLOYMENT"):
+                az_deployment = secrets["AZURE_OPENAI_DEPLOYMENT"]
+
+        if not az_endpoint or not az_api_key:
+            raise RuntimeError(
+                "Azure OpenAI requires AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY "
+                "(set in .env or in AWS Secrets Manager via FES_AZURE_OPENAI_SECRET_ID and AWS_REGION)."
+            )
+        if not az_deployment:
+            raise RuntimeError(
+                "Azure OpenAI requires AZURE_OPENAI_DEPLOYMENT (set in .env or in the AWS secret)."
+            )
+
         az_api_ver = os.getenv("AZURE_OPENAI_API_VERSION", "2024-11-20").strip()
 
         # v1 route uses /openai/v1/chat/completions and requires a "model" field.
